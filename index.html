@@ -44,10 +44,10 @@
     <strong>How to use:</strong><br>
     • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
     • The background shows a road grid used for route planning.<br>
-    • Stations are now created manually by double‑clicking an intersection and removed via right‑click.<br>
+    • Stations are created manually by double‑clicking an intersection and removed via right‑click.<br>
     • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they continue smoothly from their current position along the current walking edge.<br>
-    • Hover over a commuter (within a generous radius) to see their route or click on one to “pin” it so that its route stays visible and is highlighted until arrival or until you click elsewhere. In the drawn route, walking segments are in green and metro segments in blue.<br>
-    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations – and the waiting time for non‑circular lines is now estimated using 2× the line’s total distance divided by the total number of trains (in either direction).<br>
+    • Each commuter’s state is now one of: walking, waiting for a train, or riding a train. When waiting, if they board the correct train their state changes to “riding” and the train updates their position. (If you mouse over or pin a commuter, their route and state are indicated.)<br>
+    • Trains still move according to their update logic – accelerating, dwelling, and moving between stations – and non‑circular lines now use an improved waiting‑time estimate.<br>
     • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -82,7 +82,7 @@
       let stations = [];  // { id, x, y, col, row }
       let metroLines = []; // { id, color, stations: [...], trains: [], isLoop }
       let activeLine = null; // for new, modify, or extend modes
-      let commuters = []; // { id, startNode, goalNode, destinationStation, route, ... }
+      let commuters = []; // { id, startNode, goalNode, destinationStation, route, currentEdgeIndex, progress, state, position, lastUpdate }
       let nextLineId = 1, nextTrainId = 1, nextCommuterId = 1;
       let arrivedCount = 0;
       let arrivalEffects = []; // { x, y, startTime }
@@ -99,6 +99,7 @@
       
       // --- Fix 1: Toggle New Line Mode ---
       newLineButton.addEventListener('click', () => {
+        // If already in new line mode, clicking again cancels it.
         if(activeLine && activeLine.editingMode === "new"){
           activeLine = null;
         } else {
@@ -341,8 +342,16 @@
               let p = elapsed / train.travelTime;
               let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p,1));
               train.progress = ease;
+              // Compute current train position:
+              let x = from.x + (to.x - from.x) * ease;
+              let y = from.y + (to.y - from.y) * ease;
+              // Update position for each onboard commuter (so they “ride” the train)
+              train.onboard.forEach(commuter => {
+                commuter.position = { x, y };
+              });
               if(p >= 1){
                 let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
+                // Drop off only those commuters whose next edge ends at this station.
                 train.onboard.forEach(commuter => {
                   if(commuter.route && commuter.route.length > 0 && commuter.route[0].to.id === arrivalStation.id){
                     commuter.currentStation = arrivalStation;
@@ -356,6 +365,7 @@
                     }
                   }
                 });
+                // Clear onboard list for this segment.
                 train.onboard = [];
                 train.originalSegment = null;
                 if(!line.isLoop){
@@ -481,7 +491,7 @@
         return route;
       }
       
-      // --- Fix: When recalculating a commuter’s route, if they are in the middle of a walking edge, use their current position (instead of snapping to the nearest grid node).
+      // --- When recalculating a commuter’s route, if they are on a walking edge, use their current position.
       function recalcCommuterRoutes(){
         commuters.forEach(commuter => {
           if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
@@ -515,7 +525,7 @@
         });
       }
       
-      // --- Fix: When spawning a commuter, set destinationStation so boarding works correctly.
+      // --- When spawning a commuter, set destinationStation for proper drop-off.
       function spawnCommuter(){
         let gridKeys = Object.keys(gridNodes);
         if(gridKeys.length < 2) return;
@@ -533,7 +543,7 @@
           id: nextCommuterId++,
           startNode,
           goalNode,
-          destinationStation: goalNode, // For proper drop-off during boarding.
+          destinationStation: goalNode, // For drop-off during boarding.
           route, // array of edges
           currentEdgeIndex: 0,
           progress: 0,
@@ -546,6 +556,11 @@
       
       function updateCommuters(now){
         commuters.forEach(commuter => {
+          // If the commuter is riding a train, let the train update their position.
+          if(commuter.state === "riding"){
+            // No independent update here.
+            return;
+          }
           if(commuter.state === "walking"){
             if(!commuter.route || commuter.currentEdgeIndex >= commuter.route.length){
               commuter.arrived = true;
@@ -570,6 +585,7 @@
                 };
               }
             } else if(edge.mode === "metro"){
+              // Transition to waiting state.
               commuter.state = "waitingForTrain";
               commuter.position = { x: edge.from.x, y: edge.from.y };
             }
@@ -578,18 +594,22 @@
             let edge = commuter.route[commuter.currentEdgeIndex];
             let candidate = edge.line.trains.find(train => {
               if(train.state !== "dwell") return false;
+              // Check that the train is at the station matching edge.from and heading in the correct direction.
               let posStation = (train.direction === 1) ? train.line.stations[train.currentSegment] : train.line.stations[train.currentSegment+1];
               if(posStation.col === edge.from.col && posStation.row === edge.from.row){
                 if(train.direction === 1){
-                  return train.line.stations[train.currentSegment+1].col === edge.to.col && train.line.stations[train.currentSegment+1].row === edge.to.row;
+                  return train.line.stations[train.currentSegment+1].col === edge.to.col &&
+                         train.line.stations[train.currentSegment+1].row === edge.to.row;
                 } else {
-                  return train.line.stations[train.currentSegment].col === edge.to.col && train.line.stations[train.currentSegment].row === edge.to.row;
+                  return train.line.stations[train.currentSegment].col === edge.to.col &&
+                         train.line.stations[train.currentSegment].row === edge.to.row;
                 }
               }
               return false;
             });
             if(candidate){
-              commuter.state = "inTrain";
+              // Board the train: change state to "riding" and add commuter to train's onboard list.
+              commuter.state = "riding";
               candidate.onboard = candidate.onboard || [];
               candidate.onboard.push(commuter);
             }
@@ -963,7 +983,7 @@
         }
       }
       
-      // --- Fix 2: Draw commuter route segments in different colors based on mode ---
+      // --- Fix 2: Draw commuter route segments in different colors based on mode.
       function drawHoveredRoute(){
         let commuterToDraw = pinnedCommuter || hoveredCommuter;
         if(commuterToDraw && commuterToDraw.route){
@@ -1030,6 +1050,7 @@
             ctx.fillRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
             ctx.strokeStyle = "black";
             ctx.strokeRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
+            // Draw onboard commuters as small circles inside the train.
             if(train.onboard && train.onboard.length > 0){
               let n = train.onboard.length;
               let spacing = trainWidth / (n + 1);
@@ -1069,23 +1090,30 @@
         });
       }
       
+      // Draw only commuters that are walking or waiting.
       function drawCommuters(){
         commuters.forEach(commuter => {
-          ctx.beginPath();
-          ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
-          ctx.fillStyle = "blue";
-          ctx.fill();
-          ctx.fillStyle = "red";
-          ctx.font = "bold 12px Arial";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "middle";
-          ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
-          if(pinnedCommuter && commuter.id === pinnedCommuter.id){
+          // If riding, draw an extra label indicating that state.
+          if(commuter.state === "riding"){
             ctx.beginPath();
-            ctx.arc(commuter.position.x, commuter.position.y, 10, 0, 2*Math.PI);
-            ctx.strokeStyle = "orange";
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
+            ctx.fillStyle = "purple";
+            ctx.fill();
+            ctx.fillStyle = "black";
+            ctx.font = "bold 10px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.fillText("Riding", commuter.position.x, commuter.position.y - 8);
+          } else {
+            ctx.beginPath();
+            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
+            ctx.fillStyle = "blue";
+            ctx.fill();
+            ctx.fillStyle = "red";
+            ctx.font = "bold 12px Arial";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
           }
         });
       }
