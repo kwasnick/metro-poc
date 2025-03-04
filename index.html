@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Metro System Designer & Simulator</title>
+  <title>Metro System Designer & Simulator – Multi‑Modal</title>
   <style>
     body { font-family: sans-serif; margin:0; padding:0; }
     canvas { border: 1px solid #000; display: block; margin: 0 auto; }
@@ -42,62 +42,64 @@
   <div id="trainPopup"></div>
   <p style="margin:10px;">
     <strong>How to use:</strong><br>
-    • Click “New Line” then click on a station to begin drawing a new metro line. As you drag, if you pass near another station the route “snaps” to it. (A station already in the route won’t be added again—except if it’s the starting station, which will complete a loop if you have at least two stops.)<br>
-    • In modify mode (by clicking an existing segment) drag from the pivot point. Dragging over one of the pivot’s endpoints will remove that stop (allowed even for loop lines or the final station in a non–loop) as long as the resulting route still has at least 2 stops (or 3 for loops); dragging over any other station inserts it between.<br>
-    • To extend a non–circular line, small tabs appear at both endpoints. Click and drag a tab to a new station (using snapping) to extend the line at that end. (You can also drag from one tab to the opposite endpoint’s station to close the loop.)<br>
-    • “Delete Line” removes every line whose color matches the current dropdown selection.<br>
-    • Waiting commuters are drawn as small blue circles with a bold red “→ X” label (positioned at the top–right of the station) showing their destination. Mousing over one highlights its planned route.<br>
-    • Passengers board trains – only the train heading toward the next station in their computed route is accepted. When that train arrives (at a transfer or final destination) the passenger disembarks immediately (triggering a “tada” burst and incrementing the global counter).<br>
-    • You can mouse over any train to see a popup list of its onboard passengers.<br>
-    • The simulation starts with 3 stations and gradually adds new stations (up to 26, labeled A–Z).<br>
-    • A fixed, realistic city-map style background is shown behind the metro.
+    • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
+    • The background shows a road grid that is used in route planning.<br>
+    • Stations now appear only at grid intersections.<br>
+    • Commuters spawn at random grid intersections and choose a random destination (for example, from (2,5) to (12,8)). They compute the fastest route (mixing walking and metro) based on relative speeds and waiting times.<br>
+    • While following their route, commuters “walk” along road segments or wait at nodes for a train. When a train is available on a metro edge, they board it. Once inside, they ride until their next transfer or destination.<br>
+    • If a train’s underlying metro segment is modified mid-run, it “locks in” its original segment (displayed faded) until it finishes that leg.<br>
+    • Hover over a train to see its onboard passengers.<br>
+    • New stations are added gradually (up to 26, labeled A–Z).<br>
+    • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <script>
     (function(){
-      // ========= CONFIGURATION =========
+      // === CONFIGURATION ===
       const canvas = document.getElementById('gameCanvas');
       const ctx = canvas.getContext('2d');
+      // Metro/Train constants:
       const acceleration = 0.0005;
       const maxSpeed = 0.05;
+      const dwellTime = 2000;
+      const trainWidth = 30, trainHeight = 15;
+      // Station and line drawing:
       const stationRadius = 15;
       const snapThreshold = 20;
-      const trainWidth = 30, trainHeight = 15;
-      const dwellTime = 2000;
-      const commuterSpawnInterval = 3000;
-      const initialStationCount = 3;
-      const maxStationCount = 26;
-      const minStationDist = 80;
-      const stationAddInterval = 15000; // add new station every 15 sec
       const tabMargin = 10;
       const tabRadius = 6;
-
-      // ========= GLOBAL STATE =========
-      let stations = [];  // { id, x, y }
+      // Commuter/Walking constants:
+      const commuterSpawnInterval = 3000;
+      const walkingSpeed = 0.002; // px/ms
+      // Grid parameters:
+      const gridSpacing = 50;
+      const canvasCols = Math.floor(canvas.width / gridSpacing) + 1;
+      const canvasRows = Math.floor(canvas.height / gridSpacing) + 1;
+      // Station management:
+      const initialStationCount = 3;
+      const maxStationCount = 26;
+      const stationAddInterval = 15000;
+      // Metro edge wait time (approximation):
+      const metroWaitTime = dwellTime / 2;
+      
+      // === GLOBAL STATE ===
+      let stations = [];  // { id, x, y, col, row }
       let metroLines = []; // { id, color, stations: [...], trains: [], isLoop }
-      /* activeLine is used when drawing or modifying a line.
-         It now supports an "extend" mode for endpoints:
-           editingMode: "extend"
-           extendEnd: "start" or "end"
-           extendCursor: current cursor pos for extension,
-           extendCandidate: candidate station if snapped.
-      */
-      let activeLine = null;
-      // Commuters: { id, currentStation, destinationStation, state:"waiting"|"inTrain", route:[{line, from, to}] }
-      let commuters = [];
+      let activeLine = null; // for new, modify, or extend modes
+      let commuters = []; // { id, startNode, goalNode, route, ... }
       let nextLineId = 1, nextTrainId = 1, nextCommuterId = 1;
       let arrivedCount = 0;
       let arrivalEffects = []; // { x, y, startTime }
       let hoveredCommuter = null;
-      let hoveredTrain = null; // for train popup
+      let hoveredTrain = null;
       const trainPopup = document.getElementById('trainPopup');
-
-      // ========= UI ELEMENTS =========
+      
+      // === UI ELEMENTS ===
       const lineColorDropdown = document.getElementById('lineColorDropdown');
       const newLineButton = document.getElementById('newLineButton');
       const deleteLineButton = document.getElementById('deleteLineButton');
       const counterDiv = document.getElementById('counter');
-
+      
       newLineButton.addEventListener('click', () => {
         if(activeLine) return;
         activeLine = {
@@ -111,46 +113,47 @@
       deleteLineButton.addEventListener('click', () => {
         metroLines = metroLines.filter(line => line.color !== lineColorDropdown.value);
       });
-
-      // ========= STATION MANAGEMENT =========
+      
+      // === STATION MANAGEMENT ===
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      // Precompute valid grid intersections.
+      let validIntersections = [];
+      for (let col = 0; col < canvasCols; col++){
+        for (let row = 0; row < canvasRows; row++){
+          validIntersections.push({ col, row, x: col * gridSpacing, y: row * gridSpacing });
+        }
+      }
       function initStations(){
+        let available = validIntersections.slice();
         for(let i = 0; i < initialStationCount; i++){
-          addNewStation();
+          let idx = Math.floor(Math.random() * available.length);
+          let pt = available.splice(idx, 1)[0];
+          stations.push({ id: letters[stations.length], x: pt.x, y: pt.y, col: pt.col, row: pt.row });
         }
       }
       function addNewStation(){
-        if(stations.length >= maxStationCount) return;
-        let newLetter = letters[stations.length];
-        let valid = false, s, attempts = 0;
-        while(!valid && attempts < 1000){
-          s = {
-            id: newLetter,
-            x: Math.random()*(canvas.width-80) + 40,
-            y: Math.random()*(canvas.height-80) + 40
-          };
-          valid = stations.every(st => distance(st.x, st.y, s.x, s.y) >= minStationDist);
-          attempts++;
-        }
-        if(valid) stations.push(s);
+        let available = validIntersections.filter(pt => {
+          return !stations.some(s => s.col === pt.col && s.row === pt.row);
+        });
+        if(available.length === 0 || stations.length >= maxStationCount) return;
+        let idx = Math.floor(Math.random() * available.length);
+        let pt = available[idx];
+        stations.push({ id: letters[stations.length], x: pt.x, y: pt.y, col: pt.col, row: pt.row });
       }
       setInterval(addNewStation, stationAddInterval);
-
-      // ========= OFFSCREEN BACKGROUND (Saved) =========
+      
+      // === OFFSCREEN BACKGROUND ===
       const bgCanvas = document.createElement("canvas");
       bgCanvas.width = canvas.width;
       bgCanvas.height = canvas.height;
       const bgCtx = bgCanvas.getContext("2d");
       function rectanglesOverlap(r1, r2) {
-        return !(
-          r2.x >= r1.x + r1.width ||
-          r2.x + r2.width <= r1.x ||
-          r2.y >= r1.y + r1.height ||
-          r2.y + r2.height <= r1.y
-        );
+        return !(r2.x >= r1.x + r1.width ||
+                 r2.x + r2.width <= r1.x ||
+                 r2.y >= r1.y + r1.height ||
+                 r2.y + r2.height <= r1.y);
       }
       function createBackground(){
-        let gridSpacing = 50;
         bgCtx.save();
         bgCtx.strokeStyle = "#e0e0e0";
         bgCtx.lineWidth = 1;
@@ -179,9 +182,7 @@
           if(by + bHeight > bgCanvas.height) by = bgCanvas.height - bHeight;
           const newRect = { x: bx, y: by, width: bWidth, height: bHeight };
           let overlap = placedRects.some(rect => rectanglesOverlap(newRect, rect));
-          if (!overlap) {
-            placedRects.push(newRect);
-          }
+          if (!overlap) { placedRects.push(newRect); }
           attempts++;
         }
         placedRects.forEach(rect => {
@@ -191,10 +192,19 @@
         bgCtx.restore();
       }
       createBackground();
-
-      // ========= HELPER FUNCTIONS =========
+      
+      // === GRID NODES FOR PATHPLANNING ===
+      let gridNodes = {};
+      for(let col = 0; col < canvasCols; col++){
+        for(let row = 0; row < canvasRows; row++){
+          let key = col + "," + row;
+          gridNodes[key] = { col, row, x: col * gridSpacing, y: row * gridSpacing };
+        }
+      }
+      
+      // === HELPER FUNCTIONS ===
       function distance(x1, y1, x2, y2){
-        return Math.hypot(x2-x1, y2-y1);
+        return Math.hypot(x2 - x1, y2 - y1);
       }
       function getStationAt(x, y){
         for(let s of stations){
@@ -208,22 +218,12 @@
         }
         return null;
       }
-      function getLineSegmentAt(x, y){
-        for(let line of metroLines){
-          for(let i = 0; i < line.stations.length - 1; i++){
-            let a = line.stations[i], b = line.stations[i+1];
-            let d = distanceToSegment(x, y, a.x, a.y, b.x, b.y);
-            if(d < 5) return { line: line, segmentIndex: i };
-          }
-        }
-        return null;
-      }
       function distanceToSegment(px, py, x1, y1, x2, y2){
         const l2 = Math.pow(distance(x1, y1, x2, y2), 2);
         if(l2 === 0) return distance(px, py, x1, y1);
         let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
         t = Math.max(0, Math.min(1, t));
-        return distance(px, py, x1 + t*(x2-x1), y1 + t*(y2-y1));
+        return distance(px, py, x1 + t * (x2 - x1), y1 + t * (y2 - y1));
       }
       function computeTravelTime(d){
         const t_acc = maxSpeed / acceleration;
@@ -242,37 +242,34 @@
         r = Math.floor(r * factor);
         g = Math.floor(g * factor);
         b = Math.floor(b * factor);
-        return "#" +
-          ("0" + r.toString(16)).slice(-2) +
-          ("0" + g.toString(16)).slice(-2) +
-          ("0" + b.toString(16)).slice(-2);
+        return "#" + ("0" + r.toString(16)).slice(-2) +
+                     ("0" + g.toString(16)).slice(-2) +
+                     ("0" + b.toString(16)).slice(-2);
       }
-
-      // ========= ENDPOINT EXTENSION FUNCTIONS =========
       function computeTabPosition(line, endpointType){
         let tab = { x: 0, y: 0 };
         if(line.stations.length < 2) return tab;
         if(endpointType === "end"){
-          let last = line.stations[line.stations.length-1];
-          let prev = line.stations[line.stations.length-2];
+          let last = line.stations[line.stations.length - 1];
+          let prev = line.stations[line.stations.length - 2];
           let dx = last.x - prev.x, dy = last.y - prev.y;
-          let len = Math.sqrt(dx*dx+dy*dy);
-          let dirX = dx/len, dirY = dy/len;
+          let len = Math.sqrt(dx * dx + dy * dy);
+          let dirX = dx / len, dirY = dy / len;
           tab.x = last.x + dirX * (stationRadius + tabMargin);
           tab.y = last.y + dirY * (stationRadius + tabMargin);
         } else if(endpointType === "start"){
           let first = line.stations[0];
           let next = line.stations[1];
           let dx = first.x - next.x, dy = first.y - next.y;
-          let len = Math.sqrt(dx*dx+dy*dy);
-          let dirX = dx/len, dirY = dy/len;
+          let len = Math.sqrt(dx * dx + dy * dy);
+          let dirX = dx / len, dirY = dy / len;
           tab.x = first.x + dirX * (stationRadius + tabMargin);
           tab.y = first.y + dirY * (stationRadius + tabMargin);
         }
         return tab;
       }
-
-      // ========= MOUSE EVENT HANDLING =========
+      
+      // === MOUSE EVENT HANDLING ===
       let isDragging = false;
       let currentMousePos = { x: 0, y: 0 };
       
@@ -280,6 +277,7 @@
         const rect = canvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
         let y = e.clientY - rect.top;
+        // Check for endpoint tab clicks for extend mode.
         if(!activeLine){
           let clickedTab = null;
           let extendEnd = null;
@@ -308,7 +306,16 @@
           }
         }
         if(!activeLine){
-          let segInfo = getLineSegmentAt(x, y);
+          // Check if clicking on a metro line segment for modification.
+          let segInfo = null;
+          for(let line of metroLines){
+            for(let i = 0; i < line.stations.length - 1; i++){
+              let a = line.stations[i], b = line.stations[i+1];
+              let d = distanceToSegment(x, y, a.x, a.y, b.x, b.y);
+              if(d < 5){ segInfo = { line, segmentIndex: i }; break; }
+            }
+            if(segInfo) break;
+          }
           if(segInfo){
             activeLine = segInfo.line;
             activeLine.editingMode = "modify";
@@ -341,9 +348,7 @@
               } else {
                 if(arr.length > 1 && arr[arr.length-2].id === snapped.id){
                   arr.pop();
-                } else if(arr.some(s => s.id === snapped.id)){
-                  // Do nothing.
-                } else {
+                } else if(!arr.some(s => s.id === snapped.id)){
                   arr.push(snapped);
                 }
               }
@@ -368,21 +373,30 @@
             }
           }
         }
+        // Hover detection for waiting commuters.
         hoveredCommuter = null;
-        let waitingByStation = {};
-        for(let commuter of commuters){
-          if(commuter.state === "waiting"){
-            let id = commuter.currentStation.id;
-            if(!waitingByStation[id]) waitingByStation[id] = [];
-            waitingByStation[id].push(commuter);
+        let waitingByNode = {};
+        commuters.forEach(commuter => {
+          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
+            let bestNode = null, bestDist = Infinity;
+            for(let key in gridNodes){
+              let node = gridNodes[key];
+              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
+              if(d < bestDist){ bestDist = d; bestNode = node; }
+            }
+            if(bestNode){
+              let key = bestNode.col + "," + bestNode.row;
+              if(!waitingByNode[key]) waitingByNode[key] = [];
+              waitingByNode[key].push(commuter);
+            }
           }
-        }
-        for(let stationId in waitingByStation){
-          let group = waitingByStation[stationId];
+        });
+        for(let key in waitingByNode){
+          let group = waitingByNode[key];
           group.sort((a, b) => a.id - b.id);
-          let station = stations.find(s => s.id === stationId);
-          let baseX = station.x + stationRadius + 5;
-          let baseY = station.y - stationRadius - 5;
+          let node = gridNodes[key];
+          let baseX = node.x + 5;
+          let baseY = node.y - 5;
           let gap = 12;
           for(let i = 0; i < group.length; i++){
             let pos = { x: baseX, y: baseY - i * gap };
@@ -425,20 +439,19 @@
             activeLine.editingMode = "new";
             activeLine = null;
           } else if(activeLine.editingMode === "extend"){
-            if(activeLine.extendCandidate) {
-              // If extend candidate equals the opposite endpoint, close the loop.
+            if(activeLine.extendCandidate){
               if(activeLine.extendEnd === "end"){
                 if(activeLine.extendCandidate.id === activeLine.stations[0].id && activeLine.stations.length >= 2){
                   activeLine.stations.push(activeLine.extendCandidate);
                   activeLine.isLoop = true;
-                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)) {
+                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
                   activeLine.stations.push(activeLine.extendCandidate);
                 }
               } else if(activeLine.extendEnd === "start"){
-                if(activeLine.extendCandidate.id === activeLine.stations[activeLine.stations.length - 1].id && activeLine.stations.length >= 2){
+                if(activeLine.extendCandidate.id === activeLine.stations[activeLine.stations.length-1].id && activeLine.stations.length >= 2){
                   activeLine.stations.unshift(activeLine.extendCandidate);
                   activeLine.isLoop = true;
-                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)) {
+                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
                   activeLine.stations.unshift(activeLine.extendCandidate);
                 }
               }
@@ -463,7 +476,7 @@
         }
       });
       
-      // ========= DRAWING ENDPOINT TABS =========
+      // === DRAWING ENDPOINT TABS ===
       function drawEndpointTabs(){
         metroLines.forEach(line => {
           if(line.isLoop || line.stations.length < 2) return;
@@ -481,7 +494,7 @@
         });
       }
       
-      // ========= TRAIN SIMULATION =========
+      // === TRAIN SIMULATION ===
       function spawnDefaultTrains(line){
         line.trains = [];
         let now = performance.now();
@@ -541,9 +554,9 @@
       }
       
       function updateTrains(now){
-        for(let line of metroLines){
-          if(line.stations.length < 2) continue;
-          for(let train of line.trains){
+        metroLines.forEach(line => {
+          if(line.stations.length < 2) return;
+          line.trains.forEach(train => {
             if(train.currentSegment < 0) train.currentSegment = 0;
             if(train.currentSegment > line.stations.length - 2) train.currentSegment = line.stations.length - 2;
             let from, to;
@@ -554,44 +567,36 @@
               from = line.stations[train.currentSegment+1];
               to = line.stations[train.currentSegment];
             }
-            // If train just departed from dwell, store its original segment.
-            if(train.state === "dwell" && now - train.dwellStart >= dwellTime){
-              let segLength = distance(from.x, from.y, to.x, to.y);
-              train.travelTime = computeTravelTime(segLength);
-              train.state = "moving";
-              train.departureTime = now;
-              train.originalSegment = { from: { ...from }, to: { ...to }, travelTime: train.travelTime };
-            }
-            if(train.state === "moving"){
+            if(!from || !to) return;
+            let segLength = distance(from.x, from.y, to.x, to.y);
+            if(train.state === "dwell"){
+              if(now - train.dwellStart >= dwellTime){
+                train.travelTime = computeTravelTime(segLength);
+                train.state = "moving";
+                train.departureTime = now;
+                train.originalSegment = { from: { ...from }, to: { ...to }, travelTime: train.travelTime };
+              }
+            } else if(train.state === "moving"){
               let elapsed = now - train.departureTime;
               let p = elapsed / train.travelTime;
-              let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p, 1));
+              let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p,1));
               train.progress = ease;
-              // Compute position using originalSegment if it exists.
-              let segFrom = train.originalSegment ? train.originalSegment.from : from;
-              let segTo = train.originalSegment ? train.originalSegment.to : to;
-              let dx = segTo.x - segFrom.x, dy = segTo.y - segFrom.y;
-              let x = segFrom.x + dx * ease;
-              let y = segFrom.y + dy * ease;
-              // (Train drawing uses these computed x,y below.)
-              // When movement is complete:
               if(p >= 1){
                 let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
                 train.onboard.forEach(commuter => {
                   if(commuter.route && commuter.route.length > 0 && commuter.route[0].to.id === arrivalStation.id){
                     commuter.currentStation = arrivalStation;
                     commuter.route.shift();
-                    if(commuter.destinationStation.id === arrivalStation.id){
+                    if(commuter.destinationStation && commuter.destinationStation.id === arrivalStation.id){
                       commuter.arrived = true;
                       arrivedCount++;
                       arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
                     } else {
-                      commuter.state = "waiting";
+                      commuter.state = "walking";
                     }
                   }
                 });
                 train.onboard = [];
-                // After finishing, clear originalSegment so future movements use the current line.
                 train.originalSegment = null;
                 if(!line.isLoop){
                   if(train.direction === 1 && train.currentSegment === line.stations.length - 2){
@@ -610,98 +615,200 @@
                 train.progress = 0;
               }
             }
-          }
-        }
+          });
+        });
       }
       
-      // ========= COMMUTER SIMULATION =========
-      function buildGraph(){
+      // === COMMUTER PATHPLANNING (Road + Metro) ===
+      function buildRoadGraph(){
         let graph = {};
-        for(let s of stations) graph[s.id] = [];
-        for(let line of metroLines){
+        for(let key in gridNodes) { 
+          graph[key] = []; 
+        }
+        // Add walking edges with "from" property.
+        for(let key in gridNodes) {
+          let node = gridNodes[key];
+          let neighbors = [
+            { col: node.col+1, row: node.row },
+            { col: node.col-1, row: node.row },
+            { col: node.col, row: node.row+1 },
+            { col: node.col, row: node.row-1 }
+          ];
+          neighbors.forEach(n => {
+            let nKey = n.col + "," + n.row;
+            if(gridNodes[nKey]){
+              let d = distance(node.x, node.y, gridNodes[nKey].x, gridNodes[nKey].y);
+              graph[key].push({ 
+                from: node, 
+                to: gridNodes[nKey], 
+                mode: "walk", 
+                cost: d / walkingSpeed 
+              });
+            }
+          });
+        }
+        // Add metro edges with "from" property.
+        metroLines.forEach(line => {
           for(let i = 0; i < line.stations.length - 1; i++){
             let a = line.stations[i], b = line.stations[i+1];
-            graph[a.id].push({ station: b, line: line });
-            graph[b.id].push({ station: a, line: line });
-          }
-        }
-        return graph;
-      }
-      function computeRoute(start, goal){
-        let graph = buildGraph();
-        let queue = [ start ];
-        let visited = {};
-        visited[start.id] = null;
-        while(queue.length){
-          let current = queue.shift();
-          if(current === goal) break;
-          for(let edge of graph[current.id]){
-            if(!(edge.station.id in visited)){
-              visited[edge.station.id] = { from: current, line: edge.line };
-              queue.push(edge.station);
+            let keyA = a.col + "," + a.row;
+            let keyB = b.col + "," + b.row;
+            if(gridNodes[keyA] && gridNodes[keyB]){
+              let d = distance(a.x, a.y, b.x, b.y);
+              let metroCost = computeTravelTime(d) + metroWaitTime;
+              graph[keyA].push({ 
+                from: gridNodes[keyA], 
+                to: gridNodes[keyB], 
+                mode: "metro", 
+                cost: metroCost, 
+                line 
+              });
+              graph[keyB].push({ 
+                from: gridNodes[keyB], 
+                to: gridNodes[keyA], 
+                mode: "metro", 
+                cost: metroCost, 
+                line 
+              });
             }
           }
+        });
+        return graph;
+      }
+      
+      function computeFastestRoute(startNode, goalNode){
+        let graph = buildRoadGraph();
+        let startKey = startNode.col + "," + startNode.row;
+        let goalKey = goalNode.col + "," + goalNode.row;
+        let dist = {};
+        let prev = {};
+        for(let key in graph) { dist[key] = Infinity; }
+        dist[startKey] = 0;
+        let pq = [{ key: startKey, cost: 0 }];
+        while(pq.length){
+          pq.sort((a, b) => a.cost - b.cost);
+          let current = pq.shift();
+          if(current.key === goalKey) break;
+          graph[current.key].forEach(edge => {
+            let neighborKey = edge.to.col + "," + edge.to.row;
+            let alt = dist[current.key] + edge.cost;
+            if(alt < dist[neighborKey]){
+              dist[neighborKey] = alt;
+              prev[neighborKey] = { from: current.key, edge };
+              pq.push({ key: neighborKey, cost: alt });
+            }
+          });
         }
-        if(!(goal.id in visited)) return null;
         let route = [];
-        let cur = goal;
-        while(cur !== start){
-          let info = visited[cur.id];
-          route.unshift({ from: info.from, to: cur, line: info.line });
-          cur = info.from;
+        let curKey = goalKey;
+        while(curKey && curKey !== startKey){
+          if(prev[curKey]){
+            route.unshift(prev[curKey].edge);
+            curKey = prev[curKey].from;
+          } else { break; }
         }
         return route;
       }
+      
       function spawnCommuter(){
-        if(stations.length < 2) return;
-        let start = stations[Math.floor(Math.random()*stations.length)];
-        let dest;
-        do { dest = stations[Math.floor(Math.random()*stations.length)]; } while(dest === start);
-        let route = computeRoute(start, dest);
+        let gridKeys = Object.keys(gridNodes);
+        if(gridKeys.length < 2) return;
+        let startKey = gridKeys[Math.floor(Math.random() * gridKeys.length)];
+        let goalKey;
+        do { goalKey = gridKeys[Math.floor(Math.random() * gridKeys.length)]; } while(goalKey === startKey);
+        let startNode = gridNodes[startKey];
+        let goalNode = gridNodes[goalKey];
+        let route = computeFastestRoute(startNode, goalNode);
+        if(!route || route.length === 0){
+          arrivedCount++;
+          return;
+        }
         let commuter = {
           id: nextCommuterId++,
-          currentStation: start,
-          destinationStation: dest,
-          state: "waiting",
-          route: route
+          startNode,
+          goalNode,
+          route, // array of edges
+          currentEdgeIndex: 0,
+          progress: 0,
+          state: "walking",
+          position: { x: startNode.x, y: startNode.y },
+          lastUpdate: performance.now()
         };
         commuters.push(commuter);
       }
+      
       function updateCommuters(now){
-        for(let commuter of commuters){
-          if(commuter.state === "waiting"){
-            if(commuter.currentStation.id === commuter.destinationStation.id){
+        commuters.forEach(commuter => {
+          if(commuter.state === "walking"){
+            if(!commuter.route || commuter.currentEdgeIndex >= commuter.route.length){
               commuter.arrived = true;
               arrivedCount++;
-              arrivalEffects.push({ x: commuter.currentStation.x, y: commuter.currentStation.y, startTime: now });
-              continue;
+              arrivalEffects.push({ x: commuter.position.x, y: commuter.position.y, startTime: now });
+              return;
             }
-            commuter.route = computeRoute(commuter.currentStation, commuter.destinationStation);
-            if(commuter.route && commuter.route.length > 0){
-              let seg = commuter.route[0];
-              let candidate = seg.line.trains.find(train => {
-                if(train.state !== "dwell") return false;
-                let posStation = (train.direction === 1) ? train.line.stations[train.currentSegment] : train.line.stations[train.currentSegment+1];
-                if(posStation.id !== commuter.currentStation.id) return false;
-                if(train.direction === 1){
-                  return train.line.stations[train.currentSegment+1].id === seg.to.id;
-                } else {
-                  return train.line.stations[train.currentSegment].id === seg.to.id;
-                }
-              });
-              if(candidate){
-                commuter.state = "inTrain";
-                candidate.onboard = candidate.onboard || [];
-                candidate.onboard.push(commuter);
+            let edge = commuter.route[commuter.currentEdgeIndex];
+            if(edge.mode === "walk"){
+              let d = distance(edge.from.x, edge.from.y, edge.to.x, edge.to.y);
+              let travelTime = d / walkingSpeed;
+              let dt = now - commuter.lastUpdate;
+              commuter.progress += dt / travelTime;
+              if(commuter.progress >= 1){
+                commuter.position = { x: edge.to.x, y: edge.to.y };
+                commuter.currentEdgeIndex++;
+                commuter.progress = 0;
+              } else {
+                commuter.position = {
+                  x: edge.from.x + (edge.to.x - edge.from.x) * commuter.progress,
+                  y: edge.from.y + (edge.to.y - edge.from.y) * commuter.progress
+                };
               }
+            } else if(edge.mode === "metro"){
+              commuter.state = "waitingForTrain";
+              commuter.position = { x: edge.from.x, y: edge.from.y };
+            }
+            commuter.lastUpdate = now;
+          } else if(commuter.state === "waitingForTrain"){
+            let edge = commuter.route[commuter.currentEdgeIndex];
+            let candidate = edge.line.trains.find(train => {
+              if(train.state !== "dwell") return false;
+              let posStation = (train.direction === 1) ? train.line.stations[train.currentSegment] : train.line.stations[train.currentSegment+1];
+              if(posStation.col === edge.from.col && posStation.row === edge.from.row){
+                if(train.direction === 1){
+                  return train.line.stations[train.currentSegment+1].col === edge.to.col && train.line.stations[train.currentSegment+1].row === edge.to.row;
+                } else {
+                  return train.line.stations[train.currentSegment].col === edge.to.col && train.line.stations[train.currentSegment].row === edge.to.row;
+                }
+              }
+              return false;
+            });
+            if(candidate){
+              commuter.state = "inTrain";
+              candidate.onboard = candidate.onboard || [];
+              candidate.onboard.push(commuter);
             }
           }
-        }
-        commuters = commuters.filter(c => !c.arrived && c.currentStation.id !== c.destinationStation.id);
+        });
+        commuters = commuters.filter(c => !c.arrived);
         counterDiv.textContent = "Arrived: " + arrivedCount;
       }
       
-      // ========= DRAWING FUNCTIONS =========
+      // === DRAWING FUNCTIONS ===
+      function drawStations(){
+        stations.forEach(s => {
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, stationRadius, 0, 2*Math.PI);
+          ctx.fillStyle = "#FFF";
+          ctx.fill();
+          ctx.strokeStyle = "#000";
+          ctx.stroke();
+          ctx.fillStyle = "#000";
+          ctx.font = "12px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(s.id, s.x, s.y);
+        });
+      }
+      
       function getSegmentOffset(line, segmentIndex){
         let a = line.stations[segmentIndex], b = line.stations[segmentIndex+1];
         let sameSegmentLines = metroLines.filter(l => {
@@ -720,23 +827,9 @@
           : (idx - count/2 + 0.5) * offsetDistance;
         return offset;
       }
-      function drawStations(){
-        for(let s of stations){
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, stationRadius, 0, 2*Math.PI);
-          ctx.fillStyle = "#FFF";
-          ctx.fill();
-          ctx.strokeStyle = "#000";
-          ctx.stroke();
-          ctx.fillStyle = "#000";
-          ctx.font = "12px Arial";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(s.id, s.x, s.y);
-        }
-      }
+      
       function drawMetroLines(){
-        for(let line of metroLines){
+        metroLines.forEach(line => {
           ctx.beginPath();
           ctx.lineWidth = 4;
           ctx.strokeStyle = line.color;
@@ -747,12 +840,8 @@
             let len = Math.sqrt(dx*dx + dy*dy);
             let offX = -dy/len * offset;
             let offY = dx/len * offset;
-            let startX = s1.x + offX;
-            let startY = s1.y + offY;
-            let endX = s2.x + offX;
-            let endY = s2.y + offY;
-            if(i === 0) ctx.moveTo(startX, startY);
-            ctx.lineTo(endX, endY);
+            ctx.moveTo(s1.x + offX, s1.y + offY);
+            ctx.lineTo(s2.x + offX, s2.y + offY);
           }
           ctx.stroke();
           ctx.lineWidth = 2;
@@ -769,22 +858,20 @@
             ctx.fill();
             ctx.restore();
           }
-        }
+        });
       }
+      
       function drawActiveLine(){
         if(activeLine){
           if(activeLine.editingMode === "new"){
             ctx.beginPath();
             ctx.lineWidth = 4;
             ctx.strokeStyle = activeLine.color;
-            for(let i = 0; i < activeLine.stations.length; i++){
-              let s = activeLine.stations[i];
+            activeLine.stations.forEach((s, i) => {
               if(i === 0) ctx.moveTo(s.x, s.y);
               else ctx.lineTo(s.x, s.y);
-            }
-            if(activeLine.stations.length > 0){
-              ctx.lineTo(currentMousePos.x, currentMousePos.y);
-            }
+            });
+            ctx.lineTo(currentMousePos.x, currentMousePos.y);
             ctx.stroke();
             ctx.lineWidth = 2;
           } else if(activeLine.editingMode === "modify"){
@@ -792,11 +879,10 @@
             ctx.globalAlpha = 0.3;
             ctx.beginPath();
             ctx.strokeStyle = activeLine.color;
-            for(let i = 0; i < activeLine.originalStations.length; i++){
-              let s = activeLine.originalStations[i];
+            activeLine.originalStations.forEach((s, i) => {
               if(i === 0) ctx.moveTo(s.x, s.y);
               else ctx.lineTo(s.x, s.y);
-            }
+            });
             ctx.stroke();
             ctx.restore();
             let tempStations = activeLine.originalStations.slice();
@@ -805,20 +891,14 @@
             ctx.beginPath();
             ctx.lineWidth = 4;
             ctx.strokeStyle = activeLine.color;
-            for(let i = 0; i < tempStations.length; i++){
-              let p = tempStations[i];
+            tempStations.forEach((p, i) => {
               if(i === 0) ctx.moveTo(p.x, p.y);
               else ctx.lineTo(p.x, p.y);
-            }
+            });
             ctx.stroke();
             ctx.lineWidth = 2;
           } else if(activeLine.editingMode === "extend"){
-            let endpoint;
-            if(activeLine.extendEnd === "end"){
-              endpoint = activeLine.stations[activeLine.stations.length-1];
-            } else {
-              endpoint = activeLine.stations[0];
-            }
+            let endpoint = activeLine.extendEnd === "end" ? activeLine.stations[activeLine.stations.length-1] : activeLine.stations[0];
             ctx.save();
             ctx.strokeStyle = activeLine.color;
             ctx.lineWidth = 4;
@@ -832,10 +912,11 @@
           }
         }
       }
+      
       function drawTrains(){
         hoveredTrain = null;
-        for(let line of metroLines){
-          for(let train of line.trains){
+        metroLines.forEach(line => {
+          line.trains.forEach(train => {
             let segFrom, segTo;
             if(train.state === "moving" && train.originalSegment){
               segFrom = train.originalSegment.from;
@@ -880,20 +961,25 @@
               let spacing = trainWidth / (n + 1);
               for(let i = 0; i < n; i++){
                 let paxOffsetX = -trainWidth/2 + spacing*(i+1);
-                let paxOffsetY = 0;
                 ctx.beginPath();
-                ctx.arc(paxOffsetX, paxOffsetY, 3, 0, 2*Math.PI);
+                ctx.arc(paxOffsetX, 0, 3, 0, 2*Math.PI);
                 ctx.fillStyle = "blue";
                 ctx.fill();
                 ctx.fillStyle = "white";
                 ctx.font = "8px Arial";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText(train.onboard[i].destinationStation.id, paxOffsetX, paxOffsetY);
+                ctx.fillText(train.onboard[i].destinationStation ? train.onboard[i].destinationStation.id : "", paxOffsetX, 0);
               }
             }
             ctx.restore();
-            // Draw faded "ghost" segment if the original segment is stored (i.e. if the underlying line changed)
+            let invX = currentMousePos.x - x, invY = currentMousePos.y - y;
+            let cos = Math.cos(-angle), sin = Math.sin(-angle);
+            let localX = invX * cos - invY * sin;
+            let localY = invX * sin + invY * cos;
+            if(localX >= -trainWidth/2 && localX <= trainWidth/2 && localY >= -trainHeight/2 && localY <= trainHeight/2){
+              hoveredTrain = train;
+            }
             if(train.state === "moving" && train.originalSegment){
               ctx.save();
               ctx.globalAlpha = 0.3;
@@ -905,62 +991,42 @@
               ctx.stroke();
               ctx.restore();
             }
-            let invX = currentMousePos.x - x, invY = currentMousePos.y - y;
-            let cos = Math.cos(-angle), sin = Math.sin(-angle);
-            let localX = invX * cos - invY * sin;
-            let localY = invX * sin + invY * cos;
-            if(localX >= -trainWidth/2 && localX <= trainWidth/2 && localY >= -trainHeight/2 && localY <= trainHeight/2){
-              hoveredTrain = train;
-            }
-          }
-        }
+          });
+        });
       }
+      
       function drawCommuters(){
-        let waitingByStation = {};
-        for(let commuter of commuters){
-          if(commuter.state === "waiting"){
-            let id = commuter.currentStation.id;
-            if(!waitingByStation[id]) waitingByStation[id] = [];
-            waitingByStation[id].push(commuter);
-          }
-        }
-        for(let stationId in waitingByStation){
-          let group = waitingByStation[stationId];
-          group.sort((a, b) => a.id - b.id);
-          let station = stations.find(s => s.id === stationId);
-          let baseX = station.x + stationRadius + 5;
-          let baseY = station.y - stationRadius - 5;
-          let gap = 12;
-          for(let i = 0; i < group.length; i++){
-            let x = baseX;
-            let y = baseY - i * gap;
+        commuters.forEach(commuter => {
+          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
             ctx.beginPath();
-            ctx.arc(x, y, 5, 0, 2*Math.PI);
+            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
             ctx.fillStyle = "blue";
             ctx.fill();
             ctx.fillStyle = "red";
             ctx.font = "bold 12px Arial";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText("→ " + group[i].destinationStation.id, x + 8, y);
+            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
           }
-        }
+        });
       }
+      
       function drawHoveredRoute(){
         if(hoveredCommuter && hoveredCommuter.route){
           ctx.save();
           ctx.strokeStyle = "orange";
           ctx.lineWidth = 3;
           ctx.setLineDash([5,5]);
-          for(let seg of hoveredCommuter.route){
+          hoveredCommuter.route.forEach(edge => {
             ctx.beginPath();
-            ctx.moveTo(seg.from.x, seg.from.y);
-            ctx.lineTo(seg.to.x, seg.to.y);
+            ctx.moveTo(edge.from.x, edge.from.y);
+            ctx.lineTo(edge.to.x, edge.to.y);
             ctx.stroke();
-          }
+          });
           ctx.restore();
         }
       }
+      
       function drawArrivalEffects(now){
         for(let i = arrivalEffects.length - 1; i >= 0; i--){
           let effect = arrivalEffects[i];
@@ -983,10 +1049,11 @@
           }
         }
       }
+      
       function updateTrainPopup(){
         if(hoveredTrain){
           let list = (hoveredTrain.onboard && hoveredTrain.onboard.length > 0)
-                    ? hoveredTrain.onboard.map(p => p.destinationStation.id).join(", ")
+                    ? hoveredTrain.onboard.map(p => p.destinationStation ? p.destinationStation.id : "").join(", ")
                     : "No passengers";
           trainPopup.textContent = "Passengers: " + list;
           trainPopup.style.left = (currentMousePos.x + 15) + "px";
@@ -996,9 +1063,11 @@
           trainPopup.style.display = "none";
         }
       }
+      
       function drawBackground(){
         ctx.drawImage(bgCanvas, 0, 0);
       }
+      
       function draw(){
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawBackground();
@@ -1011,6 +1080,7 @@
         drawHoveredRoute();
         drawArrivalEffects(performance.now());
       }
+      
       function update(now){
         updateTrains(now);
         updateCommuters(now);
@@ -1018,93 +1088,8 @@
         draw();
         requestAnimationFrame(update);
       }
-      // ========= COMMUTER SIMULATION =========
-      function buildGraph(){
-        let graph = {};
-        for(let s of stations) graph[s.id] = [];
-        for(let line of metroLines){
-          for(let i = 0; i < line.stations.length - 1; i++){
-            let a = line.stations[i], b = line.stations[i+1];
-            graph[a.id].push({ station: b, line: line });
-            graph[b.id].push({ station: a, line: line });
-          }
-        }
-        return graph;
-      }
-      function computeRoute(start, goal){
-        let graph = buildGraph();
-        let queue = [ start ];
-        let visited = {};
-        visited[start.id] = null;
-        while(queue.length){
-          let current = queue.shift();
-          if(current === goal) break;
-          for(let edge of graph[current.id]){
-            if(!(edge.station.id in visited)){
-              visited[edge.station.id] = { from: current, line: edge.line };
-              queue.push(edge.station);
-            }
-          }
-        }
-        if(!(goal.id in visited)) return null;
-        let route = [];
-        let cur = goal;
-        while(cur !== start){
-          let info = visited[cur.id];
-          route.unshift({ from: info.from, to: cur, line: info.line });
-          cur = info.from;
-        }
-        return route;
-      }
-      function spawnCommuter(){
-        if(stations.length < 2) return;
-        let start = stations[Math.floor(Math.random()*stations.length)];
-        let dest;
-        do { dest = stations[Math.floor(Math.random()*stations.length)]; } while(dest === start);
-        let route = computeRoute(start, dest);
-        let commuter = {
-          id: nextCommuterId++,
-          currentStation: start,
-          destinationStation: dest,
-          state: "waiting",
-          route: route
-        };
-        commuters.push(commuter);
-      }
-      function updateCommuters(now){
-        for(let commuter of commuters){
-          if(commuter.state === "waiting"){
-            if(commuter.currentStation.id === commuter.destinationStation.id){
-              commuter.arrived = true;
-              arrivedCount++;
-              arrivalEffects.push({ x: commuter.currentStation.x, y: commuter.currentStation.y, startTime: now });
-              continue;
-            }
-            commuter.route = computeRoute(commuter.currentStation, commuter.destinationStation);
-            if(commuter.route && commuter.route.length > 0){
-              let seg = commuter.route[0];
-              let candidate = seg.line.trains.find(train => {
-                if(train.state !== "dwell") return false;
-                let posStation = (train.direction === 1) ? train.line.stations[train.currentSegment] : train.line.stations[train.currentSegment+1];
-                if(posStation.id !== commuter.currentStation.id) return false;
-                if(train.direction === 1){
-                  return train.line.stations[train.currentSegment+1].id === seg.to.id;
-                } else {
-                  return train.line.stations[train.currentSegment].id === seg.to.id;
-                }
-              });
-              if(candidate){
-                commuter.state = "inTrain";
-                candidate.onboard = candidate.onboard || [];
-                candidate.onboard.push(commuter);
-              }
-            }
-          }
-        }
-        commuters = commuters.filter(c => !c.arrived && c.currentStation.id !== c.destinationStation.id);
-        counterDiv.textContent = "Arrived: " + arrivedCount;
-      }
-      // ========= INITIALIZATION =========
+      
+      // === INITIALIZATION ===
       initStations();
       setInterval(spawnCommuter, commuterSpawnInterval);
       requestAnimationFrame(update);
