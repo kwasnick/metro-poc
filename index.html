@@ -45,9 +45,9 @@
     • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
     • The background shows a road grid used for route planning.<br>
     • Stations are now created manually by double‑clicking an intersection and removed via right‑click.<br>
-    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes.<br>
+    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they now continue smoothly from their current position along the current walking edge.<br>
     • Hover over a commuter (within a generous radius) to see their route, or click on one to “pin” it so that its route stays visible and it gets highlighted until arrival or you click elsewhere.<br>
-    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations.<br>
+    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations – and commuters now correctly board and ride them to their destination stops.<br>
     • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -82,7 +82,7 @@
       let stations = [];  // { id, x, y, col, row }
       let metroLines = []; // { id, color, stations: [...], trains: [], isLoop }
       let activeLine = null; // for new, modify, or extend modes
-      let commuters = []; // { id, startNode, goalNode, route, ... }
+      let commuters = []; // { id, startNode, goalNode, destinationStation, route, ... }
       let nextLineId = 1, nextTrainId = 1, nextCommuterId = 1;
       let arrivedCount = 0;
       let arrivalEffects = []; // { x, y, startTime }
@@ -121,7 +121,7 @@
           validIntersections.push({ col, row, x: col * gridSpacing, y: row * gridSpacing });
         }
       }
-      // (Removed random station spawning – now stations are created manually via double‑click.)
+      // (Removed random station spawning – stations are now created manually.)
       
       // === OFFSCREEN BACKGROUND ===
       const bgCanvas = document.createElement("canvas");
@@ -466,6 +466,56 @@
         return route;
       }
       
+      // --- FIX 1: Recalculate route using the commuter's current position ---
+      function recalcCommuterRoutes(){
+        commuters.forEach(commuter => {
+          if(commuter.state === "walking"){
+            // If on a walking edge, use the endpoint they’re heading toward.
+            if(commuter.route && commuter.currentEdgeIndex < commuter.route.length &&
+               commuter.route[commuter.currentEdgeIndex].mode === "walk"){
+              let edge = commuter.route[commuter.currentEdgeIndex];
+              let endpoint = edge.to;
+              let tempEdge = {
+                from: { x: commuter.position.x, y: commuter.position.y },
+                to: endpoint,
+                mode: "walk",
+                cost: distance(commuter.position.x, commuter.position.y, endpoint.x, endpoint.y) / walkingSpeed
+              };
+              let newRouteFromEndpoint = computeFastestRoute(endpoint, commuter.goalNode);
+              commuter.route = [tempEdge].concat(newRouteFromEndpoint);
+              commuter.currentEdgeIndex = 0;
+              commuter.progress = 0;
+            } else {
+              // Fallback: use the nearest grid node.
+              let closest = null, best = Infinity;
+              for(let key in gridNodes){
+                let node = gridNodes[key];
+                let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
+                if(d < best){ best = d; closest = node; }
+              }
+              if(closest){
+                commuter.route = computeFastestRoute(closest, commuter.goalNode);
+                commuter.currentEdgeIndex = 0;
+                commuter.progress = 0;
+              }
+            }
+          } else if(commuter.state === "waitingForTrain"){
+            let closest = null, best = Infinity;
+            for(let key in gridNodes){
+              let node = gridNodes[key];
+              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
+              if(d < best){ best = d; closest = node; }
+            }
+            if(closest){
+              commuter.route = computeFastestRoute(closest, commuter.goalNode);
+              commuter.currentEdgeIndex = 0;
+              commuter.progress = 0;
+            }
+          }
+        });
+      }
+      
+      // --- FIX 2: Ensure commuters get on trains by setting destinationStation ---
       function spawnCommuter(){
         let gridKeys = Object.keys(gridNodes);
         if(gridKeys.length < 2) return;
@@ -483,6 +533,7 @@
           id: nextCommuterId++,
           startNode,
           goalNode,
+          destinationStation: goalNode, // Set destination for proper drop-off.
           route, // array of edges
           currentEdgeIndex: 0,
           progress: 0,
@@ -545,7 +596,6 @@
           }
         });
         commuters = commuters.filter(c => !c.arrived);
-        // Clear pinned commuter if they've arrived.
         if(pinnedCommuter && !commuters.find(c => c.id === pinnedCommuter.id)){
           pinnedCommuter = null;
         }
@@ -560,7 +610,6 @@
         const rect = canvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
         let y = e.clientY - rect.top;
-        // Check for endpoint tab clicks for extend mode.
         if(!activeLine){
           let clickedTab = null;
           let extendEnd = null;
@@ -589,7 +638,6 @@
           }
         }
         if(!activeLine){
-          // Check if clicking on a metro line segment for modification.
           let segInfo = null;
           for(let line of metroLines){
             for(let i = 0; i < line.stations.length - 1; i++){
@@ -620,7 +668,6 @@
         const rect = canvas.getBoundingClientRect();
         currentMousePos.x = e.clientX - rect.left;
         currentMousePos.y = e.clientY - rect.top;
-        
         if(activeLine && isDragging){
           if(activeLine.editingMode === "new"){
             let snapped = getSnappedStation(currentMousePos.x, currentMousePos.y);
@@ -656,7 +703,6 @@
             }
           }
         }
-        // Commuter hover detection (using a 15px radius if not pinned)
         if (!pinnedCommuter) {
           hoveredCommuter = null;
           for (let commuter of commuters) {
@@ -723,7 +769,6 @@
         }
       });
       
-      // === DOUBLE‑CLICK HANDLER: Finalize metro line or create a station ===
       canvas.addEventListener('dblclick', (e) => {
         const rect = canvas.getBoundingClientRect();
         let x = e.clientX - rect.left;
@@ -741,7 +786,6 @@
           }
           activeLine = null;
         } else {
-          // No active line – attempt to create a station at the nearest grid intersection.
           let closest = null, bestDist = Infinity;
           for (let key in gridNodes) {
             let node = gridNodes[key];
@@ -759,7 +803,6 @@
         }
       });
       
-      // === RIGHT‑CLICK HANDLER: Remove a station if one exists nearby ===
       canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
@@ -781,7 +824,6 @@
         }
       });
       
-      // === CLICK HANDLER: Pin/unpin a commuter ===
       canvas.addEventListener('click', (e) => {
         if(activeLine) return;
         const rect = canvas.getBoundingClientRect();
@@ -801,7 +843,6 @@
         }
       });
       
-      // === DRAWING FUNCTIONS ===
       function drawStations(){
         stations.forEach(s => {
           ctx.beginPath();
@@ -870,7 +911,6 @@
         });
       }
       
-      // Draw active line (for when you're drawing or editing a line).
       function drawActiveLine(){
         if(activeLine){
           if(activeLine.editingMode === "new"){
@@ -923,7 +963,6 @@
         }
       }
       
-      // Draw the route for the hovered or pinned commuter.
       function drawHoveredRoute(){
         let commuterToDraw = pinnedCommuter || hoveredCommuter;
         if(commuterToDraw && commuterToDraw.route){
@@ -1023,7 +1062,6 @@
         });
       }
       
-      // Draw commuters and highlight pinned ones.
       function drawCommuters(){
         commuters.forEach(commuter => {
           ctx.beginPath();
@@ -1090,7 +1128,6 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawBackground();
         drawMetroLines();
-        // (Endpoint tabs are drawn within drawMetroLines for non‑loops.)
         drawActiveLine();
         drawStations();
         drawTrains();
@@ -1107,27 +1144,8 @@
         requestAnimationFrame(update);
       }
       
-      // === COMMUTER RE‑ROUTING: Called whenever the metro network changes ===
-      function recalcCommuterRoutes(){
-        commuters.forEach(commuter => {
-          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
-            let closest = null, best = Infinity;
-            for(let key in gridNodes){
-              let node = gridNodes[key];
-              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
-              if(d < best){ best = d; closest = node; }
-            }
-            if(closest){
-              commuter.route = computeFastestRoute(closest, commuter.goalNode);
-              commuter.currentEdgeIndex = 0;
-              commuter.progress = 0;
-            }
-          }
-        });
-      }
-      
       // === INITIALIZATION ===
-      // (No random station initialization; stations are added manually.)
+      // (Stations are added manually via double‑click.)
       setInterval(spawnCommuter, commuterSpawnInterval);
       requestAnimationFrame(update);
     })();
