@@ -1,330 +1,463 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-    <meta charset="UTF-8">
-    <title>Metro System Game</title>
-    <style>
-        canvas {
-            border: 1px solid #000;
-            background-color: #f0f0f0;
-        }
-
-        body {
-            font-family: sans-serif;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Metro System Game with Trains</title>
+  <style>
+    canvas {
+      border: 1px solid #000;
+      background-color: #f0f0f0;
+    }
+    body {
+      font-family: sans-serif;
+    }
+  </style>
 </head>
-
 <body>
-    <h1>Metro System Game</h1>
-    <p>
-        Design the metro system by drawing train lines between stations.
-        <br>
-        <strong>Instructions:</strong> Click and drag from one station to another to create a line.
-        Click near a line to select it and press the Delete key to remove it.
-    </p>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <script>
-        (function () {
-            // Canvas setup
-            const canvas = document.getElementById('gameCanvas');
-            const ctx = canvas.getContext('2d');
+  <h1>Metro System Game with Trains</h1>
+  <p>
+    Draw train lines between stations by clicking and dragging. You can also click a line to select it and press Delete to remove it.
+    <br>
+    Commuters will spawn at stations with a destination. When a commuter’s next edge is ready for travel, a train (shown as a green rectangle with its occupancy) will be dispatched.
+    <br>
+    Each train waits a few seconds at the station (allowing commuters to board) then accelerates and decelerates along the line (so longer trips take longer). When it reaches the next station, its passengers disembark.
+  </p>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <script>
+  (function() {
+    // Canvas setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-            // Game settings
-            const stationRadius = 15;
-            const lineSelectionThreshold = 5;
-            const commuterRadius = 5;
-            const lineFrequency = 2000; // in milliseconds (i.e. every 2 sec, a train departs)
-            const commuterSpawnInterval = 3000; // spawn a new commuter every 3 seconds
-            const stationCount = 10; // number of stations
+    // Game settings and constants
+    const stationRadius = 15;
+    const lineSelectionThreshold = 5;
+    const commuterRadius = 5;
+    const lineFrequency = 5000; // in ms: how often a train can be dispatched for a given edge
+    const commuterSpawnInterval = 3000; // spawn a new commuter every 3 sec
+    const stationCount = 10; // number of stations
 
-            // Data structures
-            let stations = [];
-            let lines = [];
-            let commuters = [];
-            let selectedLine = null;
+    // Train physics constants (using ms and pixels)
+    const acceleration = 0.001; // px/(ms^2)
+    const maxSpeed = 0.3;      // px/ms
+    const dwellTime = 2000;    // ms waiting at station for boarding
 
-            // Variables for drawing lines
-            let isDrawing = false;
-            let drawingStartStation = null;
-            let currentMousePos = { x: 0, y: 0 };
+    // Data structures
+    let stations = [];
+    let lines = [];
+    let commuters = [];  // each commuter is either waiting at a station or riding on a train
+    let trains = [];     // list of trains currently active on an edge
+    // For each directed edge (e.g., "A->B"), keep track of when the next train can be dispatched.
+    let trainSchedules = {};
 
-            // Initialize stations with random positions and labels (A, B, C, …)
-            function initStations() {
-                const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                for (let i = 0; i < stationCount; i++) {
-                    let station = {
-                        id: letters[i],
-                        x: Math.random() * (canvas.width - 40) + 20,
-                        y: Math.random() * (canvas.height - 40) + 20
-                    };
-                    stations.push(station);
-                }
-            }
+    let selectedLine = null;
 
-            // Utility functions
-            function distance(x1, y1, x2, y2) {
-                return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
-            }
+    // Variables for drawing lines (for metro design)
+    let isDrawing = false;
+    let drawingStartStation = null;
+    let currentMousePos = { x: 0, y: 0 };
 
-            // Distance from point (px,py) to line segment (x1,y1)-(x2,y2)
-            function distanceToSegment(px, py, x1, y1, x2, y2) {
-                const l2 = distance(x1, y1, x2, y2) ** 2;
-                if (l2 === 0) return distance(px, py, x1, y1);
-                let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
-                t = Math.max(0, Math.min(1, t));
-                const projX = x1 + t * (x2 - x1);
-                const projY = y1 + t * (y2 - y1);
-                return distance(px, py, projX, projY);
-            }
+    // Utility functions
+    function distance(x1, y1, x2, y2) {
+      return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
+    }
 
-            // Get station at (x,y) if within radius
-            function getStationAt(x, y) {
-                for (let station of stations) {
-                    if (distance(x, y, station.x, station.y) < stationRadius) {
-                        return station;
-                    }
-                }
-                return null;
-            }
+    // Distance from point (px,py) to line segment (x1,y1)-(x2,y2)
+    function distanceToSegment(px, py, x1, y1, x2, y2) {
+      const l2 = distance(x1, y1, x2, y2) ** 2;
+      if (l2 === 0) return distance(px, py, x1, y1);
+      let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      const projX = x1 + t * (x2 - x1);
+      const projY = y1 + t * (y2 - y1);
+      return distance(px, py, projX, projY);
+    }
 
-            // Get line near (x,y) if within threshold distance
-            function getLineAt(x, y) {
-                for (let line of lines) {
-                    if (distanceToSegment(x, y, line.stationA.x, line.stationA.y, line.stationB.x, line.stationB.y) < lineSelectionThreshold) {
-                        return line;
-                    }
-                }
-                return null;
-            }
+    // Get station at (x,y) if within radius
+    function getStationAt(x, y) {
+      for (let station of stations) {
+        if (distance(x, y, station.x, station.y) < stationRadius) {
+          return station;
+        }
+      }
+      return null;
+    }
 
-            // Graph search (BFS) to find the shortest path from start to goal station
-            function findShortestPath(start, goal) {
-                let queue = [];
-                let visited = {};
-                let prev = {};
-                queue.push(start);
-                visited[start.id] = true;
+    // Get line near (x,y) if within threshold distance
+    function getLineAt(x, y) {
+      for (let line of lines) {
+        if (distanceToSegment(x, y, line.stationA.x, line.stationA.y, line.stationB.x, line.stationB.y) < lineSelectionThreshold) {
+          return line;
+        }
+      }
+      return null;
+    }
 
-                while (queue.length > 0) {
-                    let current = queue.shift();
-                    if (current === goal) break;
-                    let neighbors = getNeighbors(current);
-                    for (let neighbor of neighbors) {
-                        if (!visited[neighbor.id]) {
-                            visited[neighbor.id] = true;
-                            prev[neighbor.id] = current;
-                            queue.push(neighbor);
-                        }
-                    }
-                }
-                // Reconstruct path if goal reached
-                let path = [];
-                if (!visited[goal.id]) return null;
-                for (let curr = goal; curr; curr = prev[curr.id]) {
-                    path.push(curr);
-                }
-                return path.reverse();
-            }
+    // Graph search (BFS) to find the shortest path from start to goal station
+    function findShortestPath(start, goal) {
+      let queue = [];
+      let visited = {};
+      let prev = {};
+      queue.push(start);
+      visited[start.id] = true;
 
-            // Get neighboring stations for a given station (i.e. those directly connected by a line)
-            function getNeighbors(station) {
-                let neighbors = [];
-                for (let line of lines) {
-                    if (line.stationA === station) {
-                        neighbors.push(line.stationB);
-                    } else if (line.stationB === station) {
-                        neighbors.push(line.stationA);
-                    }
-                }
-                return neighbors;
-            }
+      while (queue.length > 0) {
+        let current = queue.shift();
+        if (current === goal) break;
+        let neighbors = getNeighbors(current);
+        for (let neighbor of neighbors) {
+          if (!visited[neighbor.id]) {
+            visited[neighbor.id] = true;
+            prev[neighbor.id] = current;
+            queue.push(neighbor);
+          }
+        }
+      }
+      // Reconstruct path if goal reached
+      let path = [];
+      if (!visited[goal.id]) return null;
+      for (let curr = goal; curr; curr = prev[curr.id]) {
+        path.push(curr);
+      }
+      return path.reverse();
+    }
 
-            // Drawing functions
-            function drawStations() {
-                for (let station of stations) {
-                    ctx.beginPath();
-                    ctx.arc(station.x, station.y, stationRadius, 0, 2 * Math.PI);
-                    ctx.fillStyle = "#FFF";
-                    ctx.fill();
-                    ctx.strokeStyle = "#000";
-                    ctx.stroke();
-                    // Station label
-                    ctx.fillStyle = "#000";
-                    ctx.font = "12px Arial";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText(station.id, station.x, station.y);
-                }
-            }
+    // Get neighboring stations for a given station (i.e. those directly connected by a line)
+    function getNeighbors(station) {
+      let neighbors = [];
+      for (let line of lines) {
+        if (line.stationA === station) {
+          neighbors.push(line.stationB);
+        } else if (line.stationB === station) {
+          neighbors.push(line.stationA);
+        }
+      }
+      return neighbors;
+    }
 
-            function drawLines() {
-                for (let line of lines) {
-                    ctx.beginPath();
-                    ctx.moveTo(line.stationA.x, line.stationA.y);
-                    ctx.lineTo(line.stationB.x, line.stationB.y);
-                    if (line === selectedLine) {
-                        ctx.strokeStyle = "red";
-                        ctx.lineWidth = 4;
-                    } else {
-                        ctx.strokeStyle = "#000";
-                        ctx.lineWidth = 2;
-                    }
-                    ctx.stroke();
-                }
-                ctx.lineWidth = 2; // reset line width
-            }
+    // Compute travel time for a train moving along an edge of length d
+    function computeTravelTime(d) {
+      // Time to accelerate to maxSpeed
+      const t_acc = maxSpeed / acceleration; // ms
+      const d_acc = 0.5 * acceleration * t_acc * t_acc;
+      if (d >= 2 * d_acc) {
+        const t_cruise = (d - 2 * d_acc) / maxSpeed;
+        return t_acc + t_cruise + t_acc;
+      } else {
+        // if distance is too short to reach max speed, use symmetric acceleration/deceleration.
+        return 2 * Math.sqrt(d / acceleration);
+      }
+    }
 
-            function drawCommuters() {
-                // To avoid overlapping commuters at the same station,
-                // count how many are at a station and offset each commuter.
-                let stationCommuteCount = {};
-                for (let commuter of commuters) {
-                    if (!stationCommuteCount[commuter.currentStation.id]) {
-                        stationCommuteCount[commuter.currentStation.id] = 0;
-                    }
-                    let count = stationCommuteCount[commuter.currentStation.id];
-                    let offsetX = (count % 3) * 10 - 10; // possible offsets: -10, 0, 10
-                    let offsetY = Math.floor(count / 3) * 10; // vertical offset
-                    stationCommuteCount[commuter.currentStation.id]++;
-                    ctx.beginPath();
-                    ctx.arc(commuter.currentStation.x + offsetX, commuter.currentStation.y + offsetY, commuterRadius, 0, 2 * Math.PI);
-                    ctx.fillStyle = "blue";
-                    ctx.fill();
-                    // Show destination next to commuter
-                    ctx.fillStyle = "black";
-                    ctx.font = "10px Arial";
-                    ctx.fillText(commuter.destinationStation.id, commuter.currentStation.x + offsetX + 10, commuter.currentStation.y + offsetY);
-                }
-            }
+    // Initialize stations with random positions and labels (A, B, C, …)
+    function initStations() {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      for (let i = 0; i < stationCount; i++) {
+        let station = {
+          id: letters[i],
+          x: Math.random() * (canvas.width - 40) + 20,
+          y: Math.random() * (canvas.height - 40) + 20
+        };
+        stations.push(station);
+      }
+    }
 
-            // Draw temporary line when the user is drawing
-            function drawTemporaryLine() {
-                if (isDrawing && drawingStartStation) {
-                    ctx.beginPath();
-                    ctx.moveTo(drawingStartStation.x, drawingStartStation.y);
-                    ctx.lineTo(currentMousePos.x, currentMousePos.y);
-                    ctx.strokeStyle = "gray";
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-            }
+    // Drawing functions
+    function drawStations() {
+      for (let station of stations) {
+        ctx.beginPath();
+        ctx.arc(station.x, station.y, stationRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = "#FFF";
+        ctx.fill();
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+        // Station label
+        ctx.fillStyle = "#000";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(station.id, station.x, station.y);
+      }
+    }
 
-            // Main render loop
-            function draw() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawLines();
-                drawStations();
-                drawCommuters();
-                drawTemporaryLine();
-                requestAnimationFrame(draw);
-            }
+    function drawLines() {
+      for (let line of lines) {
+        ctx.beginPath();
+        ctx.moveTo(line.stationA.x, line.stationA.y);
+        ctx.lineTo(line.stationB.x, line.stationB.y);
+        if (line === selectedLine) {
+          ctx.strokeStyle = "red";
+          ctx.lineWidth = 4;
+        } else {
+          ctx.strokeStyle = "#000";
+          ctx.lineWidth = 2;
+        }
+        ctx.stroke();
+      }
+      ctx.lineWidth = 2; // reset line width
+    }
 
-            // Mouse event handlers
-            canvas.addEventListener('mousedown', function (e) {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                const station = getStationAt(x, y);
-                if (station) {
-                    // Begin drawing a line from this station
-                    isDrawing = true;
-                    drawingStartStation = station;
-                } else {
-                    // If not clicking on a station, check if a line was clicked.
-                    const line = getLineAt(x, y);
-                    if (line) {
-                        selectedLine = line;
-                    } else {
-                        selectedLine = null;
-                    }
-                }
+    // Draw waiting commuters at stations
+    function drawWaitingCommuters() {
+      // Group waiting commuters by station
+      let waitingGroups = {};
+      for (let commuter of commuters) {
+        if (commuter.state === "waiting") {
+          if (!waitingGroups[commuter.currentStation.id])
+            waitingGroups[commuter.currentStation.id] = [];
+          waitingGroups[commuter.currentStation.id].push(commuter);
+        }
+      }
+      for (let stationId in waitingGroups) {
+        let station = stations.find(s => s.id === stationId);
+        let group = waitingGroups[stationId];
+        for (let i = 0; i < group.length; i++) {
+          let offsetX = (i % 3) * 10 - 10;
+          let offsetY = Math.floor(i / 3) * 10;
+          ctx.beginPath();
+          ctx.arc(station.x + offsetX, station.y + offsetY, commuterRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = "blue";
+          ctx.fill();
+          ctx.fillStyle = "black";
+          ctx.font = "10px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(group[i].destinationStation.id, station.x + offsetX + 10, station.y + offsetY);
+        }
+      }
+    }
+
+    // Draw trains on the network
+    function drawTrains() {
+      for (let train of trains) {
+        let pos;
+        if (train.state === "boarding") {
+          pos = { x: train.from.x, y: train.from.y };
+        } else if (train.state === "moving") {
+          // Use stored progress (updated in update loop)
+          pos = {
+            x: train.from.x + (train.to.x - train.from.x) * train.progress,
+            y: train.from.y + (train.to.y - train.from.y) * train.progress
+          };
+        }
+        // Compute angle for orientation
+        let angle = Math.atan2(train.to.y - train.from.y, train.to.x - train.from.x);
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(angle);
+        // Draw a rectangle to represent the train (centered)
+        ctx.fillStyle = "green";
+        ctx.fillRect(-15, -7.5, 30, 15);
+        // Show number of onboard commuters
+        ctx.fillStyle = "white";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(train.onboard.length, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // Draw temporary line when the user is drawing
+    function drawTemporaryLine() {
+      if (isDrawing && drawingStartStation) {
+        ctx.beginPath();
+        ctx.moveTo(drawingStartStation.x, drawingStartStation.y);
+        ctx.lineTo(currentMousePos.x, currentMousePos.y);
+        ctx.strokeStyle = "gray";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Main draw function
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawLines();
+      drawStations();
+      drawTrains();
+      drawWaitingCommuters();
+      drawTemporaryLine();
+    }
+
+    // Mouse event handlers for drawing/ modifying train lines
+    canvas.addEventListener('mousedown', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const station = getStationAt(x, y);
+      if (station) {
+        // Begin drawing a line from this station
+        isDrawing = true;
+        drawingStartStation = station;
+      } else {
+        // If not clicking on a station, check if a line was clicked.
+        const line = getLineAt(x, y);
+        if (line) {
+          selectedLine = line;
+        } else {
+          selectedLine = null;
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+      const rect = canvas.getBoundingClientRect();
+      currentMousePos.x = e.clientX - rect.left;
+      currentMousePos.y = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+      if (isDrawing && drawingStartStation) {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const station = getStationAt(x, y);
+        if (station && station !== drawingStartStation) {
+          // Only add the line if it doesn't already exist
+          let exists = lines.some(function(line) {
+            return (line.stationA === drawingStartStation && line.stationB === station) ||
+                   (line.stationB === drawingStartStation && line.stationA === station);
+          });
+          if (!exists) {
+            lines.push({
+              stationA: drawingStartStation,
+              stationB: station,
+              frequency: lineFrequency
             });
+          }
+        }
+      }
+      isDrawing = false;
+      drawingStartStation = null;
+    });
 
-            canvas.addEventListener('mousemove', function (e) {
-                const rect = canvas.getBoundingClientRect();
-                currentMousePos.x = e.clientX - rect.left;
-                currentMousePos.y = e.clientY - rect.top;
-            });
+    // Handle key events to delete selected lines
+    document.addEventListener('keydown', function(e) {
+      if (e.key === "Delete" && selectedLine) {
+        lines = lines.filter(function(line) {
+          return line !== selectedLine;
+        });
+        selectedLine = null;
+      }
+    });
 
-            canvas.addEventListener('mouseup', function (e) {
-                if (isDrawing && drawingStartStation) {
-                    const rect = canvas.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    const station = getStationAt(x, y);
-                    if (station && station !== drawingStartStation) {
-                        // Only add the line if it doesn't already exist
-                        let exists = lines.some(function (line) {
-                            return (line.stationA === drawingStartStation && line.stationB === station) ||
-                                (line.stationB === drawingStartStation && line.stationA === station);
-                        });
-                        if (!exists) {
-                            lines.push({
-                                stationA: drawingStartStation,
-                                stationB: station,
-                                frequency: lineFrequency
-                            });
-                        }
-                    }
-                }
-                isDrawing = false;
-                drawingStartStation = null;
-            });
+    // Commuter logic
+    let commuterIdCounter = 0;
+    function spawnCommuter() {
+      if (stations.length < 2) return;
+      let start = stations[Math.floor(Math.random() * stations.length)];
+      let dest;
+      do {
+        dest = stations[Math.floor(Math.random() * stations.length)];
+      } while (dest === start);
+      let commuter = {
+        id: commuterIdCounter++,
+        currentStation: start,
+        destinationStation: dest,
+        state: "waiting", // or "inTrain"
+        route: null
+      };
+      commuters.push(commuter);
+    }
 
-            // Handle key events to delete selected lines
-            document.addEventListener('keydown', function (e) {
-                if (e.key === "Delete" && selectedLine) {
-                    lines = lines.filter(function (line) {
-                        return line !== selectedLine;
-                    });
-                    selectedLine = null;
-                }
-            });
-
-            // Commuter logic
-            let commuterIdCounter = 0;
-            function spawnCommuter() {
-                if (stations.length < 2) return;
-                let start = stations[Math.floor(Math.random() * stations.length)];
-                let dest;
-                do {
-                    dest = stations[Math.floor(Math.random() * stations.length)];
-                } while (dest === start);
-                let commuter = {
-                    id: commuterIdCounter++,
-                    currentStation: start,
-                    destinationStation: dest
+    // Update simulation state each frame
+    function update(timestamp) {
+      // For each waiting commuter, see if they can board a train on their next leg.
+      for (let commuter of commuters) {
+        if (commuter.state === "waiting") {
+          // If they already reached destination, they will be removed later.
+          if (commuter.currentStation === commuter.destinationStation)
+            continue;
+          // Compute (or recompute) the route from current station to destination.
+          let route = findShortestPath(commuter.currentStation, commuter.destinationStation);
+          commuter.route = route;
+          if (route && route.length > 1) {
+            let nextStation = route[1];
+            let edgeKey = commuter.currentStation.id + "->" + nextStation.id;
+            // Check if there is already a train in boarding state at the origin for this edge.
+            let boardingTrain = trains.find(t => t.edgeKey === edgeKey && t.state === "boarding");
+            if (boardingTrain) {
+              if (!boardingTrain.onboard.includes(commuter)) {
+                boardingTrain.onboard.push(commuter);
+                commuter.state = "inTrain";
+              }
+            } else {
+              // If no boarding train and the scheduled departure time is due, spawn a new train.
+              let nextDep = trainSchedules[edgeKey] || 0;
+              if (timestamp >= nextDep) {
+                // Compute distance between stations
+                const d = distance(commuter.currentStation.x, commuter.currentStation.y, nextStation.x, nextStation.y);
+                const travelTime = computeTravelTime(d);
+                // Spawn new train in boarding state at origin.
+                let newTrain = {
+                  id: Date.now() + Math.random(),
+                  from: commuter.currentStation,
+                  to: nextStation,
+                  edgeKey: edgeKey,
+                  state: "boarding",  // boarding state: waiting at origin for dwellTime
+                  boardStartTime: timestamp,
+                  dwellTime: dwellTime,
+                  departureTime: null, // will be set when boarding ends
+                  travelTime: travelTime,
+                  progress: 0,  // progress along the route (0 to 1)
+                  onboard: [commuter]
                 };
-                commuters.push(commuter);
+                trains.push(newTrain);
+                commuter.state = "inTrain";
+                // Set the next departure time for this edge.
+                trainSchedules[edgeKey] = timestamp + lineFrequency;
+              }
             }
+          }
+        }
+      }
+      // Remove commuters that have reached destination.
+      commuters = commuters.filter(c => c.currentStation !== c.destinationStation);
 
-            function moveCommuters() {
-                // For each commuter, if they’re not at their destination, try to move them along the shortest path.
-                commuters = commuters.filter(function (commuter) {
-                    if (commuter.currentStation === commuter.destinationStation) {
-                        // Remove commuter if destination is reached
-                        return false;
-                    }
-                    let path = findShortestPath(commuter.currentStation, commuter.destinationStation);
-                    if (path && path.length > 1) {
-                        // Move the commuter to the next station in the path
-                        commuter.currentStation = path[1];
-                    }
-                    return true;
-                });
+      // Update trains.
+      for (let i = trains.length - 1; i >= 0; i--) {
+        let train = trains[i];
+        if (train.state === "boarding") {
+          // Remain in boarding state until dwell time expires.
+          if (timestamp >= train.boardStartTime + train.dwellTime) {
+            train.state = "moving";
+            train.departureTime = train.boardStartTime + train.dwellTime;
+          }
+        } else if (train.state === "moving") {
+          let elapsed = timestamp - train.departureTime;
+          if (elapsed >= train.travelTime) {
+            // Train has arrived at destination.
+            for (let passenger of train.onboard) {
+              // Update each commuter: they disembark at the destination station.
+              passenger.currentStation = train.to;
+              passenger.state = "waiting";
+              passenger.route = null; // will be recalculated
             }
+            // Remove the train from the simulation.
+            trains.splice(i, 1);
+            continue;
+          }
+          // Compute easing progress (cosine ease in/out)
+          let p = elapsed / train.travelTime;
+          let ease = 0.5 - 0.5 * Math.cos(Math.PI * p);
+          train.progress = ease;
+        }
+      }
 
-            // Start the game
-            initStations();
-            draw();
-            setInterval(spawnCommuter, commuterSpawnInterval);
-            setInterval(moveCommuters, lineFrequency);
-        })();
-    </script>
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    // Start simulation
+    initStations();
+    draw();
+    requestAnimationFrame(update);
+    setInterval(spawnCommuter, commuterSpawnInterval);
+
+  })();
+  </script>
 </body>
-
 </html>
