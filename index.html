@@ -32,12 +32,13 @@
   <p>
     <strong>How to use:</strong><br>
     • Click “New Line” then click on a station to begin drawing a new metro line. As you drag, if you pass near another station the route “snaps” to it.  
-    • If you drag over a station already in the route (other than the last), the route is trimmed (removing stops after that station).  
-    • Dragging to the starting station (with at least 2 stops) completes the loop.  
-    • To modify an existing line, click on a segment. Then drag from that clicked “pivot” point to a new station. A faint copy of the original route is shown; releasing over a station (different from the pivot’s neighbors) will insert that stop into the route – otherwise the route reverts.  
+    • Dragging over a station already in the route will trim the route—except that dragging over the starting station (if you already have a stop) completes the loop.  
+    • To modify an existing line, click on one of its segments. Then drag from the clicked “pivot” point:  
+  – Dragging over one of the pivot’s endpoints (X or Y) will remove that station (for non‑loop lines only),  
+  – Dragging over another station will insert that station between X and Y. A faint copy of the original line is shown during modification.  
     • “Delete Line” removes every line whose color matches the current dropdown selection.  
-    • Waiting commuters are drawn as small blue circles with a bold red “→ X” label showing their target. Hovering over one will highlight their planned route.  
-    • Passengers board trains and are drawn inside the train (they remain visible during part of the dwell period).
+    • Waiting commuters are drawn as small blue circles with a bold red “→ X” label showing their target. Hovering over one highlights their planned route.  
+    • Passengers board trains and are drawn inside the train (they remain visible while riding).  
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
   <script>
@@ -58,7 +59,7 @@
       let stations = [];      // each station: { id, x, y }
       let metroLines = [];    // each line: { id, color, stations: [...], trains: [], isLoop }
       // activeLine is used when drawing a new line or modifying an existing one.
-      // For modification mode, we store: editingMode = "modify", modifySegmentIndex, originalStations, modifyCursor, modifyCandidate.
+      // In modify mode, we store: editingMode = "modify", modifySegmentIndex, originalStations, modifyCursor, modifyCandidate.
       let activeLine = null;
 
       // Commuters: { id, currentStation, destinationStation, state:"waiting"|"inTrain", route:[{line, from, to}] }
@@ -195,22 +196,31 @@
         // --- Active line drawing or modification ---
         if(activeLine && isDragging){
           if(activeLine.editingMode === "new"){
-            // For new line drawing, try snapping to a station.
             let snapped = getSnappedStation(currentMousePos.x, currentMousePos.y);
             if(snapped){
               let arr = activeLine.stations;
-              let idx = arr.indexOf(snapped);
-              if(idx !== -1 && idx < arr.length - 1){
-                // If already in route (but not as the last), trim route.
-                activeLine.stations = arr.slice(0, idx+1);
-              } else if(arr.length === 0){
-                activeLine.stations.push(snapped);
-              } else if(arr[arr.length-1] !== snapped){
-                activeLine.stations.push(snapped);
+              // If snapping to the starting station (and there’s at least one other stop), complete the loop.
+              if(snapped === arr[0] && arr.length >= 2){
+                if(arr[arr.length-1] !== arr[0]){
+                  arr.push(arr[0]);
+                }
+              } else {
+                let idx = arr.indexOf(snapped);
+                // If snapping to the station immediately before the last, remove last.
+                if(idx !== -1 && idx === arr.length - 2){
+                  arr.pop();
+                } else if(idx !== -1 && idx < arr.length - 1){
+                  // Trim the route to that station.
+                  activeLine.stations = arr.slice(0, idx+1);
+                } else if(arr.length === 0){
+                  activeLine.stations.push(snapped);
+                } else if(arr[arr.length-1] !== snapped){
+                  activeLine.stations.push(snapped);
+                }
               }
             }
           } else if(activeLine.editingMode === "modify"){
-            // For modifying an existing line, update the modification cursor.
+            // In modify mode, update the modification cursor.
             let candidate = getSnappedStation(currentMousePos.x, currentMousePos.y);
             if(candidate){
               activeLine.modifyCursor = { x: candidate.x, y: candidate.y };
@@ -223,7 +233,6 @@
         }
 
         // --- Hover detection for waiting commuters ---
-        // Group waiting commuters by station and compute their drawn positions.
         hoveredCommuter = null;
         let waitingByStation = {};
         for(let commuter of commuters){
@@ -235,9 +244,7 @@
         }
         for(let stationId in waitingByStation){
           let group = waitingByStation[stationId];
-          // Sort group for consistent ordering.
           group.sort((a,b) => a.id - b.id);
-          // Compute offsets so they appear side by side.
           let station = stations.find(s => s.id === stationId);
           let spacing = 12;
           for(let i = 0; i < group.length; i++){
@@ -259,15 +266,25 @@
             let idx = activeLine.modifySegmentIndex;
             let X = activeLine.originalStations[idx];
             let Y = activeLine.originalStations[idx+1];
-            // If a candidate station was snapped and it isn’t equal to X or Y, insert it.
-            if(activeLine.modifyCandidate && activeLine.modifyCandidate !== X && activeLine.modifyCandidate !== Y){
-              activeLine.stations = activeLine.originalStations.slice();
-              activeLine.stations.splice(idx+1, 0, activeLine.modifyCandidate);
+            // In non-loop lines only, allow removal by dragging over one of the endpoints:
+            if(!activeLine.isLoop && activeLine.modifyCandidate){
+              if(activeLine.modifyCandidate === X && idx > 0){
+                activeLine.stations = activeLine.originalStations.slice();
+                activeLine.stations.splice(idx, 1);
+              } else if(activeLine.modifyCandidate === Y && idx+1 < activeLine.originalStations.length - 1){
+                activeLine.stations = activeLine.originalStations.slice();
+                activeLine.stations.splice(idx+1, 1);
+              } else if(activeLine.modifyCandidate !== X && activeLine.modifyCandidate !== Y){
+                // Otherwise, insert the candidate between X and Y.
+                activeLine.stations = activeLine.originalStations.slice();
+                activeLine.stations.splice(idx+1, 0, activeLine.modifyCandidate);
+              } else {
+                activeLine.stations = activeLine.originalStations.slice();
+              }
             } else {
-              // Revert modification.
               activeLine.stations = activeLine.originalStations.slice();
             }
-            activeLine.editingMode = "new"; // modification complete
+            activeLine.editingMode = "new";
             activeLine = null;
           }
         }
@@ -353,7 +370,7 @@
       function updateTrains(now){
         for(let line of metroLines){
           for(let train of line.trains){
-            // Determine endpoints based on direction.
+            // Determine endpoints based on train direction.
             let from, to;
             if(train.direction === 1){
               from = line.stations[train.currentSegment];
@@ -375,17 +392,19 @@
               let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p, 1));
               train.progress = ease;
               if(p >= 1){
-                // Arrived at next station.
+                // Arrived at destination of current segment.
                 if(line.isLoop){
                   train.currentSegment = (train.currentSegment + train.direction) % (line.stations.length - 1);
                   if(train.currentSegment < 0) train.currentSegment += (line.stations.length - 1);
                 } else {
-                  if(train.direction === 1 && train.currentSegment >= line.stations.length - 2){
+                  // For non-loop lines, if at an endpoint, reverse direction without advancing segment.
+                  if(train.direction === 1 && train.currentSegment === line.stations.length - 2){
                     train.direction = -1;
-                  } else if(train.direction === -1 && train.currentSegment <= 0){
+                  } else if(train.direction === -1 && train.currentSegment === 0){
                     train.direction = 1;
+                  } else {
+                    train.currentSegment += train.direction;
                   }
-                  train.currentSegment += train.direction;
                 }
                 train.state = "dwell";
                 train.dwellStart = now;
@@ -459,11 +478,10 @@
       }
 
       function updateCommuters(now){
-        // Board waiting commuters.
+        // For every waiting commuter, recalc route (to reflect any map changes).
         for(let commuter of commuters){
           if(commuter.state === "waiting"){
-            if(commuter.currentStation === commuter.destinationStation) continue;
-            if(!commuter.route) commuter.route = computeRoute(commuter.currentStation, commuter.destinationStation);
+            commuter.route = computeRoute(commuter.currentStation, commuter.destinationStation);
             if(commuter.route && commuter.route.length > 0){
               let seg = commuter.route[0];
               // Look for a train on seg.line dwelling at commuter.currentStation.
@@ -480,10 +498,10 @@
             }
           }
         }
-        // Disembark passengers after a portion of the dwell period.
+        // Disembark passengers only after the full dwell time so they remain visible on the train.
         for(let line of metroLines){
           for(let train of line.trains){
-            if(train.state === "dwell" && (now - train.dwellStart >= dwellTime * 0.8) && train.onboard.length > 0){
+            if(train.state === "dwell" && (now - train.dwellStart >= dwellTime) && train.onboard.length > 0){
               let currentStation = (train.direction === 1) ? line.stations[train.currentSegment] : line.stations[train.currentSegment+1];
               train.onboard.forEach(commuter => {
                 if(commuter.route && commuter.route.length > 0 && commuter.route[0].to === currentStation){
@@ -492,8 +510,7 @@
                   commuter.route.shift();
                 }
               });
-              // Keep the onboard list until next update so passengers remain visible briefly.
-              // Then clear it.
+              // Clear onboard after disembarkation.
               train.onboard = [];
             }
           }
@@ -504,7 +521,7 @@
       // ========= DRAWING FUNCTIONS =========
 
       // For metro lines that share the same segment between two stations,
-      // compute an offset (in pixels) based on how many lines share that segment.
+      // compute an offset (in pixels) so that parallel segments are drawn side by side.
       function getSegmentOffset(line, segmentIndex){
         let a = line.stations[segmentIndex], b = line.stations[segmentIndex+1];
         let sameSegmentLines = metroLines.filter(l => {
@@ -517,7 +534,7 @@
         sameSegmentLines.sort((l1, l2) => l1.id - l2.id);
         let idx = sameSegmentLines.findIndex(l => l.id === line.id);
         let count = sameSegmentLines.length;
-        let offsetDistance = 10;  // increased for clarity
+        let offsetDistance = 10;  // larger offset for clarity
         let offset = 0;
         if(count % 2 === 1){
           let mid = Math.floor(count/2);
@@ -570,7 +587,7 @@
         }
       }
 
-      // Draw active line (either new or in modification mode)
+      // Draw the active line (either new or in modification mode).
       function drawActiveLine(){
         if(activeLine){
           if(activeLine.editingMode === "new"){
@@ -588,7 +605,7 @@
             ctx.stroke();
             ctx.lineWidth = 2;
           } else if(activeLine.editingMode === "modify"){
-            // Draw the original line faintly.
+            // Draw a faint copy of the original line.
             ctx.save();
             ctx.globalAlpha = 0.3;
             ctx.beginPath();
@@ -600,7 +617,7 @@
             }
             ctx.stroke();
             ctx.restore();
-            // Draw the modified version.
+            // Draw the modified version (showing the pivot segment stretched to the cursor).
             let tempStations = activeLine.originalStations.slice();
             let idx = activeLine.modifySegmentIndex;
             tempStations.splice(idx+1, 0, activeLine.modifyCursor);
@@ -618,9 +635,8 @@
         }
       }
 
-      // Draw trains. Trains on the same segment of the same line are grouped and offset.
+      // Draw trains. Trains sharing the same segment of the same line are offset so they appear parallel.
       function drawTrains(){
-        // Group trains by key: line.id + "_" + train.currentSegment.
         let trainsBySegment = {};
         for(let line of metroLines){
           for(let train of line.trains){
@@ -635,15 +651,9 @@
           let count = group.length;
           group.forEach((train, idx) => {
             let offsetDistance = 6;
-            let offset = 0;
-            if(count % 2 === 1){
-              let mid = Math.floor(count/2);
-              offset = (idx - mid) * offsetDistance;
-            } else {
-              let mid = count/2;
-              offset = (idx - mid + 0.5) * offsetDistance;
-            }
-            // Compute train position along its segment.
+            let offset = (count % 2 === 1)
+              ? (idx - Math.floor(count/2)) * offsetDistance
+              : (idx - count/2 + 0.5) * offsetDistance;
             let from, to;
             if(train.direction === 1){
               from = train.line.stations[train.currentSegment];
@@ -654,12 +664,10 @@
             }
             let x = from.x + (to.x - from.x) * train.progress;
             let y = from.y + (to.y - from.y) * train.progress;
-            // Apply the same offset as the line.
             let dx = to.x - from.x, dy = to.y - from.y;
             let len = Math.sqrt(dx*dx + dy*dy);
             let offX = -dy/len * getSegmentOffset(train.line, train.currentSegment);
             let offY = dx/len * getSegmentOffset(train.line, train.currentSegment);
-            // Then add additional offset for multiple trains on same segment.
             let addOffX = -dy/len * offset;
             let addOffY = dx/len * offset;
             x += offX + addOffX;
@@ -672,12 +680,6 @@
             ctx.fillRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
             ctx.strokeStyle = "black";
             ctx.strokeRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
-            // Optionally draw train id.
-            ctx.fillStyle = "white";
-            ctx.font = "10px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(train.id, 0, 0);
             // Draw onboard passengers inside the train.
             if(train.onboard && train.onboard.length > 0){
               let n = train.onboard.length;
@@ -732,15 +734,14 @@
         }
       }
 
-      // If a commuter is hovered, draw their planned route.
+      // If a commuter is hovered, draw their planned route with a dashed orange line.
       function drawHoveredRoute(){
         if(hoveredCommuter && hoveredCommuter.route){
           ctx.save();
           ctx.strokeStyle = "orange";
           ctx.lineWidth = 3;
           ctx.setLineDash([5,5]);
-          let route = hoveredCommuter.route;
-          for(let seg of route){
+          for(let seg of hoveredCommuter.route){
             ctx.beginPath();
             ctx.moveTo(seg.from.x, seg.from.y);
             ctx.lineTo(seg.to.x, seg.to.y);
