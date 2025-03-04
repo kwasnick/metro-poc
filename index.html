@@ -350,18 +350,19 @@
               if(p >= 1){
                 let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
                 // For each onboard commuter, if their targetStop matches arrivalStation, they disembark.
+                // For each onboard commuter, check if it’s time to get off.
                 train.onboard.forEach(commuter => {
                   if(commuter.state === "riding" && commuter.targetStop && commuter.targetStop.id === arrivalStation.id){
                     commuter.currentStation = arrivalStation;
-                    // Count how many consecutive metro edges they have.
+                    // Count and remove consecutive metro edges that have been ridden.
                     let count = 0;
                     while(count < commuter.route.length && commuter.route[count].mode === "metro"){
                       count++;
                     }
-                    // Remove the edges that have been ridden.
                     commuter.route.splice(0, count);
+                    commuter.currentEdgeIndex = 0; // <-- Reset the route index after disembarking
                     commuter.targetStop = null;
-                    // If the next edge is metro, enter transfer mode.
+                    // If there are still metro edges, enter transferring state.
                     if(commuter.route.length > 0 && commuter.route[0].mode === "metro"){
                       commuter.state = "transferring";
                       commuter.transferStart = now;
@@ -624,20 +625,31 @@
               return;
             }
             let edge = commuter.route[commuter.currentEdgeIndex];
-            // Edge should be a metro edge with a line.
+            // If the commuter doesn't have a targetStop (e.g. after a transfer), recalc it:
+            if(!commuter.targetStop && edge.mode === "metro"){
+              let target = edge.to;
+              let i = commuter.currentEdgeIndex;
+              while(i < commuter.route.length && commuter.route[i].mode === "metro"){
+                target = commuter.route[i].to;
+                i++;
+              }
+              commuter.targetStop = target;
+              commuter.position = { x: edge.from.x, y: edge.from.y };
+            }
+            // Look for a train in dwell state at the correct station:
             if(!edge.line) return;
             let candidate = edge.line.trains.find(train => {
               if(train.state !== "dwell") return false;
-              let posStation = (train.direction === 1) 
-                               ? train.line.stations[train.currentSegment]
-                               : train.line.stations[train.currentSegment+1];
+              let posStation = (train.direction === 1)
+                              ? train.line.stations[train.currentSegment]
+                              : train.line.stations[train.currentSegment+1];
               if(posStation.col === edge.from.col && posStation.row === edge.from.row){
                 if(train.direction === 1){
                   return train.line.stations[train.currentSegment+1].col === edge.to.col &&
-                         train.line.stations[train.currentSegment+1].row === edge.to.row;
+                        train.line.stations[train.currentSegment+1].row === edge.to.row;
                 } else {
                   return train.line.stations[train.currentSegment].col === edge.to.col &&
-                         train.line.stations[train.currentSegment].row === edge.to.row;
+                        train.line.stations[train.currentSegment].row === edge.to.row;
                 }
               }
               return false;
@@ -1038,11 +1050,6 @@
             ctx.stroke();
           });
           ctx.restore();
-          ctx.fillStyle = "black";
-          ctx.font = "bold 10px Arial";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "bottom";
-          ctx.fillText("State: " + commuterToDraw.state, commuterToDraw.position.x, commuterToDraw.position.y - 8);
         }
       }
       
@@ -1127,37 +1134,92 @@
           });
         });
       }
+
+      function printRoute(route) {
+        if (!route || route.length === 0) return "";
+        let segments = [];
+        let i = 0;
+        while (i < route.length) {
+          let currentEdge = route[i];
+          let mode = currentEdge.mode;
+          let start = currentEdge.from;
+          let end = currentEdge.to;
+          
+          if (mode === "walk") {
+            // Compute the direction vector for the current walking edge.
+            let dx = end.col - start.col;
+            let dy = end.row - start.row;
+            let j = i + 1;
+            
+            // Group contiguous walking edges only if they continue in the same direction.
+            while (
+              j < route.length &&
+              route[j].mode === "walk" &&
+              route[j].from.col === end.col &&
+              route[j].from.row === end.row
+            ) {
+              let nextDx = route[j].to.col - route[j].from.col;
+              let nextDy = route[j].to.row - route[j].from.row;
+              if (nextDx === dx && nextDy === dy) {
+                end = route[j].to;
+                j++;
+              } else {
+                break;
+              }
+            }
+            segments.push(`walk from ${start.col},${start.row} to ${end.col},${end.row}`);
+            i = j;
+            
+          } else if (mode === "metro") {
+            let lineColor = currentEdge.line ? currentEdge.line.color : "";
+            let j = i + 1;
+            
+            // Group contiguous metro edges if they belong to the same line and connect.
+            while (
+              j < route.length &&
+              route[j].mode === "metro" &&
+              currentEdge.line && route[j].line &&
+              route[j].line.color === lineColor &&
+              route[j].from.col === end.col &&
+              route[j].from.row === end.row
+            ) {
+              end = route[j].to;
+              j++;
+            }
+            segments.push(`train on ${lineColor} line from ${start.col},${start.row} to ${end.col},${end.row}`);
+            i = j;
+            
+          } else {
+            // For any other mode, just output a generic message.
+            segments.push(`${mode} from ${start.col},${start.row} to ${end.col},${end.row}`);
+            i++;
+          }
+        }
+        return segments
+      }
       
       function drawCommuters(){
         commuters.forEach(commuter => {
           let isHighlighted = (pinnedCommuter && commuter.id === pinnedCommuter.id) ||
                               (hoveredCommuter && commuter.id === hoveredCommuter.id);
-          if(commuter.state === "riding"){
-            ctx.beginPath();
-            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
-            ctx.fillStyle = "purple";
-            ctx.fill();
-            if(isHighlighted){
-              ctx.fillStyle = "black";
-              ctx.font = "bold 10px Arial";
-              ctx.textAlign = "center";
-              ctx.textBaseline = "bottom";
-              ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y - 8);
-            }
-          } else {
-            ctx.beginPath();
-            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
-            ctx.fillStyle = "blue";
-            ctx.fill();
+          ctx.beginPath();
+          ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
+          ctx.fillStyle = "blue";
+          ctx.fill();
+          if(isHighlighted){
+            ctx.fillStyle = "black";
+            ctx.font = "bold 10px Arial";
+            ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y + 15);
             ctx.fillStyle = "red";
             ctx.font = "bold 12px Arial";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
             ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
-            if(isHighlighted){
-              ctx.fillStyle = "black";
-              ctx.font = "bold 10px Arial";
-              ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y + 15);
+            ctx.fillStyle = "black";
+            ctx.font = "bold 10px Arial";
+            let routePlan = printRoute(commuter.route);
+            for (let i=0; i<routePlan.length; i++) {
+              ctx.fillText(routePlan[i], commuter.position.x + 8, commuter.position.y - ( 15 * routePlan.length) +15 * i);
             }
           }
         });
