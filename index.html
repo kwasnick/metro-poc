@@ -43,13 +43,11 @@
   <p style="margin:10px;">
     <strong>How to use:</strong><br>
     • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
-    • The background shows a road grid that is used in route planning.<br>
-    • Stations now appear only at grid intersections.<br>
-    • Commuters spawn at random grid intersections and choose a random destination (for example, from (2,5) to (12,8)). They compute the fastest route (mixing walking and metro) based on relative speeds and waiting times.<br>
-    • While following their route, commuters “walk” along road segments or wait at nodes for a train. When a train is available on a metro edge, they board it. Once inside, they ride until their next transfer or destination.<br>
-    • If a train’s underlying metro segment is modified mid-run, it “locks in” its original segment (displayed faded) until it finishes that leg.<br>
-    • Hover over a train to see its onboard passengers.<br>
-    • New stations are added gradually (up to 26, labeled A–Z).<br>
+    • The background shows a road grid used for route planning.<br>
+    • Stations are now created manually by double‑clicking an intersection and removed via right‑click.<br>
+    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes.<br>
+    • Hover over a commuter (within a generous radius) to see their route, or click on one to “pin” it so that its route stays visible and it gets highlighted until arrival or you click elsewhere.<br>
+    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations.<br>
     • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -76,9 +74,7 @@
       const canvasCols = Math.floor(canvas.width / gridSpacing) + 1;
       const canvasRows = Math.floor(canvas.height / gridSpacing) + 1;
       // Station management:
-      const initialStationCount = 3;
       const maxStationCount = 26;
-      const stationAddInterval = 15000;
       // Metro edge wait time (approximation):
       const metroWaitTime = dwellTime / 2;
       
@@ -91,6 +87,7 @@
       let arrivedCount = 0;
       let arrivalEffects = []; // { x, y, startTime }
       let hoveredCommuter = null;
+      let pinnedCommuter = null;  // For commuter pinning
       let hoveredTrain = null;
       const trainPopup = document.getElementById('trainPopup');
       
@@ -112,6 +109,7 @@
       });
       deleteLineButton.addEventListener('click', () => {
         metroLines = metroLines.filter(line => line.color !== lineColorDropdown.value);
+        recalcCommuterRoutes();
       });
       
       // === STATION MANAGEMENT ===
@@ -123,24 +121,7 @@
           validIntersections.push({ col, row, x: col * gridSpacing, y: row * gridSpacing });
         }
       }
-      function initStations(){
-        let available = validIntersections.slice();
-        for(let i = 0; i < initialStationCount; i++){
-          let idx = Math.floor(Math.random() * available.length);
-          let pt = available.splice(idx, 1)[0];
-          stations.push({ id: letters[stations.length], x: pt.x, y: pt.y, col: pt.col, row: pt.row });
-        }
-      }
-      function addNewStation(){
-        let available = validIntersections.filter(pt => {
-          return !stations.some(s => s.col === pt.col && s.row === pt.row);
-        });
-        if(available.length === 0 || stations.length >= maxStationCount) return;
-        let idx = Math.floor(Math.random() * available.length);
-        let pt = available[idx];
-        stations.push({ id: letters[stations.length], x: pt.x, y: pt.y, col: pt.col, row: pt.row });
-      }
-      setInterval(addNewStation, stationAddInterval);
+      // (Removed random station spawning – now stations are created manually via double‑click.)
       
       // === OFFSCREEN BACKGROUND ===
       const bgCanvas = document.createElement("canvas");
@@ -269,232 +250,7 @@
         return tab;
       }
       
-      // === MOUSE EVENT HANDLING ===
-      let isDragging = false;
-      let currentMousePos = { x: 0, y: 0 };
-      
-      canvas.addEventListener('mousedown', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        let x = e.clientX - rect.left;
-        let y = e.clientY - rect.top;
-        // Check for endpoint tab clicks for extend mode.
-        if(!activeLine){
-          let clickedTab = null;
-          let extendEnd = null;
-          for(let line of metroLines){
-            if(line.isLoop) continue;
-            let tabStart = computeTabPosition(line, "start");
-            let tabEnd = computeTabPosition(line, "end");
-            if(distance(x, y, tabStart.x, tabStart.y) < 8){
-              clickedTab = line;
-              extendEnd = "start";
-              break;
-            } else if(distance(x, y, tabEnd.x, tabEnd.y) < 8){
-              clickedTab = line;
-              extendEnd = "end";
-              break;
-            }
-          }
-          if(clickedTab){
-            activeLine = clickedTab;
-            activeLine.editingMode = "extend";
-            activeLine.extendEnd = extendEnd;
-            activeLine.extendCursor = { x, y };
-            activeLine.extendCandidate = null;
-            isDragging = true;
-            return;
-          }
-        }
-        if(!activeLine){
-          // Check if clicking on a metro line segment for modification.
-          let segInfo = null;
-          for(let line of metroLines){
-            for(let i = 0; i < line.stations.length - 1; i++){
-              let a = line.stations[i], b = line.stations[i+1];
-              let d = distanceToSegment(x, y, a.x, a.y, b.x, b.y);
-              if(d < 5){ segInfo = { line, segmentIndex: i }; break; }
-            }
-            if(segInfo) break;
-          }
-          if(segInfo){
-            activeLine = segInfo.line;
-            activeLine.editingMode = "modify";
-            activeLine.modifySegmentIndex = segInfo.segmentIndex;
-            activeLine.originalStations = activeLine.stations.slice();
-            activeLine.modifyCursor = { x, y };
-            activeLine.modifyCandidate = null;
-          }
-        } else if(activeLine.editingMode === "new"){
-          if(activeLine.stations.length === 0){
-            let s = getStationAt(x, y);
-            if(s) activeLine.stations.push(s);
-          }
-        }
-        isDragging = true;
-      });
-      
-      canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        currentMousePos.x = e.clientX - rect.left;
-        currentMousePos.y = e.clientY - rect.top;
-        
-        if(activeLine && isDragging){
-          if(activeLine.editingMode === "new"){
-            let snapped = getSnappedStation(currentMousePos.x, currentMousePos.y);
-            if(snapped){
-              let arr = activeLine.stations;
-              if(snapped.id === arr[0].id && arr.length >= 2){
-                if(arr[arr.length-1].id !== snapped.id) arr.push(snapped);
-              } else {
-                if(arr.length > 1 && arr[arr.length-2].id === snapped.id){
-                  arr.pop();
-                } else if(!arr.some(s => s.id === snapped.id)){
-                  arr.push(snapped);
-                }
-              }
-            }
-          } else if(activeLine.editingMode === "modify"){
-            let candidate = getSnappedStation(currentMousePos.x, currentMousePos.y);
-            if(candidate){
-              activeLine.modifyCursor = { x: candidate.x, y: candidate.y };
-              activeLine.modifyCandidate = candidate;
-            } else {
-              activeLine.modifyCursor = { x: currentMousePos.x, y: currentMousePos.y };
-              activeLine.modifyCandidate = null;
-            }
-          } else if(activeLine.editingMode === "extend"){
-            let candidate = getSnappedStation(currentMousePos.x, currentMousePos.y);
-            if(candidate){
-              activeLine.extendCursor = { x: candidate.x, y: candidate.y };
-              activeLine.extendCandidate = candidate;
-            } else {
-              activeLine.extendCursor = { x: currentMousePos.x, y: currentMousePos.y };
-              activeLine.extendCandidate = null;
-            }
-          }
-        }
-        // Hover detection for waiting commuters.
-        hoveredCommuter = null;
-        let waitingByNode = {};
-        commuters.forEach(commuter => {
-          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
-            let bestNode = null, bestDist = Infinity;
-            for(let key in gridNodes){
-              let node = gridNodes[key];
-              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
-              if(d < bestDist){ bestDist = d; bestNode = node; }
-            }
-            if(bestNode){
-              let key = bestNode.col + "," + bestNode.row;
-              if(!waitingByNode[key]) waitingByNode[key] = [];
-              waitingByNode[key].push(commuter);
-            }
-          }
-        });
-        for(let key in waitingByNode){
-          let group = waitingByNode[key];
-          group.sort((a, b) => a.id - b.id);
-          let node = gridNodes[key];
-          let baseX = node.x + 5;
-          let baseY = node.y - 5;
-          let gap = 12;
-          for(let i = 0; i < group.length; i++){
-            let pos = { x: baseX, y: baseY - i * gap };
-            if(distance(currentMousePos.x, currentMousePos.y, pos.x, pos.y) < 8){
-              hoveredCommuter = group[i];
-              break;
-            }
-          }
-          if(hoveredCommuter) break;
-        }
-      });
-      
-      canvas.addEventListener('mouseup', (e) => {
-        isDragging = false;
-        if(activeLine){
-          if(activeLine.editingMode === "modify"){
-            let idx = activeLine.modifySegmentIndex;
-            let X = activeLine.originalStations[idx];
-            let Y = activeLine.originalStations[idx+1];
-            let minStations = activeLine.isLoop ? 3 : 2;
-            if(activeLine.modifyCandidate){
-              if((activeLine.modifyCandidate.id === X.id || activeLine.modifyCandidate.id === Y.id) && activeLine.originalStations.length > minStations){
-                activeLine.stations = activeLine.originalStations.slice();
-                if(activeLine.modifyCandidate.id === X.id){
-                  activeLine.stations.splice(idx, 1);
-                } else {
-                  activeLine.stations.splice(idx+1, 1);
-                }
-              } else if(activeLine.modifyCandidate.id !== X.id && activeLine.modifyCandidate.id !== Y.id){
-                if(!activeLine.originalStations.some(s => s.id === activeLine.modifyCandidate.id)){
-                  activeLine.stations = activeLine.originalStations.slice();
-                  activeLine.stations.splice(idx+1, 0, activeLine.modifyCandidate);
-                } else {
-                  activeLine.stations = activeLine.originalStations.slice();
-                }
-              } else {
-                activeLine.stations = activeLine.originalStations.slice();
-              }
-            }
-            activeLine.editingMode = "new";
-            activeLine = null;
-          } else if(activeLine.editingMode === "extend"){
-            if(activeLine.extendCandidate){
-              if(activeLine.extendEnd === "end"){
-                if(activeLine.extendCandidate.id === activeLine.stations[0].id && activeLine.stations.length >= 2){
-                  activeLine.stations.push(activeLine.extendCandidate);
-                  activeLine.isLoop = true;
-                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
-                  activeLine.stations.push(activeLine.extendCandidate);
-                }
-              } else if(activeLine.extendEnd === "start"){
-                if(activeLine.extendCandidate.id === activeLine.stations[activeLine.stations.length-1].id && activeLine.stations.length >= 2){
-                  activeLine.stations.unshift(activeLine.extendCandidate);
-                  activeLine.isLoop = true;
-                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
-                  activeLine.stations.unshift(activeLine.extendCandidate);
-                }
-              }
-            }
-            activeLine = null;
-          }
-        }
-      });
-      
-      canvas.addEventListener('dblclick', (e) => {
-        if(activeLine && activeLine.editingMode === "new"){
-          if(activeLine.stations.length >= 2){
-            if(activeLine.stations[0].id === activeLine.stations[activeLine.stations.length-1].id && activeLine.stations.length >= 3){
-              activeLine.isLoop = true;
-            } else {
-              activeLine.isLoop = false;
-            }
-            metroLines.push(activeLine);
-            spawnDefaultTrains(activeLine);
-          }
-          activeLine = null;
-        }
-      });
-      
-      // === DRAWING ENDPOINT TABS ===
-      function drawEndpointTabs(){
-        metroLines.forEach(line => {
-          if(line.isLoop || line.stations.length < 2) return;
-          let startTab = computeTabPosition(line, "start");
-          let endTab = computeTabPosition(line, "end");
-          ctx.save();
-          ctx.fillStyle = line.color;
-          ctx.beginPath();
-          ctx.arc(startTab.x, startTab.y, tabRadius, 0, 2*Math.PI);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(endTab.x, endTab.y, tabRadius, 0, 2*Math.PI);
-          ctx.fill();
-          ctx.restore();
-        });
-      }
-      
-      // === TRAIN SIMULATION ===
+      // === TRAIN SIMULATION FUNCTIONS ===
       function spawnDefaultTrains(line){
         line.trains = [];
         let now = performance.now();
@@ -625,7 +381,7 @@
         for(let key in gridNodes) { 
           graph[key] = []; 
         }
-        // Add walking edges with "from" property.
+        // Walking edges:
         for(let key in gridNodes) {
           let node = gridNodes[key];
           let neighbors = [
@@ -647,7 +403,7 @@
             }
           });
         }
-        // Add metro edges with "from" property.
+        // Metro edges:
         metroLines.forEach(line => {
           for(let i = 0; i < line.stations.length - 1; i++){
             let a = line.stations[i], b = line.stations[i+1];
@@ -789,8 +545,261 @@
           }
         });
         commuters = commuters.filter(c => !c.arrived);
+        // Clear pinned commuter if they've arrived.
+        if(pinnedCommuter && !commuters.find(c => c.id === pinnedCommuter.id)){
+          pinnedCommuter = null;
+        }
         counterDiv.textContent = "Arrived: " + arrivedCount;
       }
+      
+      // === MOUSE EVENT HANDLING ===
+      let isDragging = false;
+      let currentMousePos = { x: 0, y: 0 };
+      
+      canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+        // Check for endpoint tab clicks for extend mode.
+        if(!activeLine){
+          let clickedTab = null;
+          let extendEnd = null;
+          for(let line of metroLines){
+            if(line.isLoop) continue;
+            let tabStart = computeTabPosition(line, "start");
+            let tabEnd = computeTabPosition(line, "end");
+            if(distance(x, y, tabStart.x, tabStart.y) < 8){
+              clickedTab = line;
+              extendEnd = "start";
+              break;
+            } else if(distance(x, y, tabEnd.x, tabEnd.y) < 8){
+              clickedTab = line;
+              extendEnd = "end";
+              break;
+            }
+          }
+          if(clickedTab){
+            activeLine = clickedTab;
+            activeLine.editingMode = "extend";
+            activeLine.extendEnd = extendEnd;
+            activeLine.extendCursor = { x, y };
+            activeLine.extendCandidate = null;
+            isDragging = true;
+            return;
+          }
+        }
+        if(!activeLine){
+          // Check if clicking on a metro line segment for modification.
+          let segInfo = null;
+          for(let line of metroLines){
+            for(let i = 0; i < line.stations.length - 1; i++){
+              let a = line.stations[i], b = line.stations[i+1];
+              let d = distanceToSegment(x, y, a.x, a.y, b.x, b.y);
+              if(d < 5){ segInfo = { line, segmentIndex: i }; break; }
+            }
+            if(segInfo) break;
+          }
+          if(segInfo){
+            activeLine = segInfo.line;
+            activeLine.editingMode = "modify";
+            activeLine.modifySegmentIndex = segInfo.segmentIndex;
+            activeLine.originalStations = activeLine.stations.slice();
+            activeLine.modifyCursor = { x, y };
+            activeLine.modifyCandidate = null;
+          }
+        } else if(activeLine.editingMode === "new"){
+          if(activeLine.stations.length === 0){
+            let s = getStationAt(x, y);
+            if(s) activeLine.stations.push(s);
+          }
+        }
+        isDragging = true;
+      });
+      
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        currentMousePos.x = e.clientX - rect.left;
+        currentMousePos.y = e.clientY - rect.top;
+        
+        if(activeLine && isDragging){
+          if(activeLine.editingMode === "new"){
+            let snapped = getSnappedStation(currentMousePos.x, currentMousePos.y);
+            if(snapped){
+              let arr = activeLine.stations;
+              if(snapped.id === arr[0].id && arr.length >= 2){
+                if(arr[arr.length-1].id !== snapped.id) arr.push(snapped);
+              } else {
+                if(arr.length > 1 && arr[arr.length-2].id === snapped.id){
+                  arr.pop();
+                } else if(!arr.some(s => s.id === snapped.id)){
+                  arr.push(snapped);
+                }
+              }
+            }
+          } else if(activeLine.editingMode === "modify"){
+            let candidate = getSnappedStation(currentMousePos.x, currentMousePos.y);
+            if(candidate){
+              activeLine.modifyCursor = { x: candidate.x, y: candidate.y };
+              activeLine.modifyCandidate = candidate;
+            } else {
+              activeLine.modifyCursor = { x: currentMousePos.x, y: currentMousePos.y };
+              activeLine.modifyCandidate = null;
+            }
+          } else if(activeLine.editingMode === "extend"){
+            let candidate = getSnappedStation(currentMousePos.x, currentMousePos.y);
+            if(candidate){
+              activeLine.extendCursor = { x: candidate.x, y: candidate.y };
+              activeLine.extendCandidate = candidate;
+            } else {
+              activeLine.extendCursor = { x: currentMousePos.x, y: currentMousePos.y };
+              activeLine.extendCandidate = null;
+            }
+          }
+        }
+        // Commuter hover detection (using a 15px radius if not pinned)
+        if (!pinnedCommuter) {
+          hoveredCommuter = null;
+          for (let commuter of commuters) {
+            if((commuter.state === "walking" || commuter.state === "waitingForTrain") &&
+               distance(currentMousePos.x, currentMousePos.y, commuter.position.x, commuter.position.y) < 15) {
+                 hoveredCommuter = commuter;
+                 break;
+               }
+          }
+        }
+      });
+      
+      canvas.addEventListener('mouseup', (e) => {
+        isDragging = false;
+        if(activeLine){
+          if(activeLine.editingMode === "modify"){
+            let idx = activeLine.modifySegmentIndex;
+            let X = activeLine.originalStations[idx];
+            let Y = activeLine.originalStations[idx+1];
+            let minStations = activeLine.isLoop ? 3 : 2;
+            if(activeLine.modifyCandidate){
+              if((activeLine.modifyCandidate.id === X.id || activeLine.modifyCandidate.id === Y.id) && activeLine.originalStations.length > minStations){
+                activeLine.stations = activeLine.originalStations.slice();
+                if(activeLine.modifyCandidate.id === X.id){
+                  activeLine.stations.splice(idx, 1);
+                } else {
+                  activeLine.stations.splice(idx+1, 1);
+                }
+              } else if(activeLine.modifyCandidate.id !== X.id && activeLine.modifyCandidate.id !== Y.id){
+                if(!activeLine.originalStations.some(s => s.id === activeLine.modifyCandidate.id)){
+                  activeLine.stations = activeLine.originalStations.slice();
+                  activeLine.stations.splice(idx+1, 0, activeLine.modifyCandidate);
+                } else {
+                  activeLine.stations = activeLine.originalStations.slice();
+                }
+              } else {
+                activeLine.stations = activeLine.originalStations.slice();
+              }
+            }
+            activeLine.editingMode = "new";
+            activeLine = null;
+            recalcCommuterRoutes();
+          } else if(activeLine.editingMode === "extend"){
+            if(activeLine.extendCandidate){
+              if(activeLine.extendEnd === "end"){
+                if(activeLine.extendCandidate.id === activeLine.stations[0].id && activeLine.stations.length >= 2){
+                  activeLine.stations.push(activeLine.extendCandidate);
+                  activeLine.isLoop = true;
+                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
+                  activeLine.stations.push(activeLine.extendCandidate);
+                }
+              } else if(activeLine.extendEnd === "start"){
+                if(activeLine.extendCandidate.id === activeLine.stations[activeLine.stations.length-1].id && activeLine.stations.length >= 2){
+                  activeLine.stations.unshift(activeLine.extendCandidate);
+                  activeLine.isLoop = true;
+                } else if(!activeLine.stations.some(s => s.id === activeLine.extendCandidate.id)){
+                  activeLine.stations.unshift(activeLine.extendCandidate);
+                }
+              }
+            }
+            activeLine = null;
+            recalcCommuterRoutes();
+          }
+        }
+      });
+      
+      // === DOUBLE‑CLICK HANDLER: Finalize metro line or create a station ===
+      canvas.addEventListener('dblclick', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+        if(activeLine && activeLine.editingMode === "new"){
+          if(activeLine.stations.length >= 2){
+            if(activeLine.stations[0].id === activeLine.stations[activeLine.stations.length-1].id && activeLine.stations.length >= 3){
+              activeLine.isLoop = true;
+            } else {
+              activeLine.isLoop = false;
+            }
+            metroLines.push(activeLine);
+            spawnDefaultTrains(activeLine);
+            recalcCommuterRoutes();
+          }
+          activeLine = null;
+        } else {
+          // No active line – attempt to create a station at the nearest grid intersection.
+          let closest = null, bestDist = Infinity;
+          for (let key in gridNodes) {
+            let node = gridNodes[key];
+            let d = distance(x, y, node.x, node.y);
+            if(d < bestDist){ bestDist = d; closest = node; }
+          }
+          if(bestDist < snapThreshold){
+            let exists = stations.find(s => s.col === closest.col && s.row === closest.row);
+            if(!exists){
+              let newStation = { id: letters[stations.length], x: closest.x, y: closest.y, col: closest.col, row: closest.row };
+              stations.push(newStation);
+              recalcCommuterRoutes();
+            }
+          }
+        }
+      });
+      
+      // === RIGHT‑CLICK HANDLER: Remove a station if one exists nearby ===
+      canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+        let stationToRemove = null;
+        for(let s of stations){
+          if(distance(x, y, s.x, s.y) < snapThreshold){
+            stationToRemove = s;
+            break;
+          }
+        }
+        if(stationToRemove){
+          stations = stations.filter(s => s !== stationToRemove);
+          metroLines.forEach(line => {
+            line.stations = line.stations.filter(s => s.id !== stationToRemove.id);
+          });
+          recalcCommuterRoutes();
+        }
+      });
+      
+      // === CLICK HANDLER: Pin/unpin a commuter ===
+      canvas.addEventListener('click', (e) => {
+        if(activeLine) return;
+        const rect = canvas.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+        let found = null;
+        for(let commuter of commuters){
+          if(distance(x, y, commuter.position.x, commuter.position.y) < 15){
+            found = commuter;
+            break;
+          }
+        }
+        if(found){
+          pinnedCommuter = found;
+        } else {
+          pinnedCommuter = null;
+        }
+      });
       
       // === DRAWING FUNCTIONS ===
       function drawStations(){
@@ -861,6 +870,7 @@
         });
       }
       
+      // Draw active line (for when you're drawing or editing a line).
       function drawActiveLine(){
         if(activeLine){
           if(activeLine.editingMode === "new"){
@@ -910,6 +920,24 @@
             ctx.restore();
             ctx.lineWidth = 2;
           }
+        }
+      }
+      
+      // Draw the route for the hovered or pinned commuter.
+      function drawHoveredRoute(){
+        let commuterToDraw = pinnedCommuter || hoveredCommuter;
+        if(commuterToDraw && commuterToDraw.route){
+          ctx.save();
+          ctx.strokeStyle = "orange";
+          ctx.lineWidth = 3;
+          ctx.setLineDash([5,5]);
+          commuterToDraw.route.forEach(edge => {
+            ctx.beginPath();
+            ctx.moveTo(edge.from.x, edge.from.y);
+            ctx.lineTo(edge.to.x, edge.to.y);
+            ctx.stroke();
+          });
+          ctx.restore();
         }
       }
       
@@ -995,36 +1023,26 @@
         });
       }
       
+      // Draw commuters and highlight pinned ones.
       function drawCommuters(){
         commuters.forEach(commuter => {
-          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
+          ctx.beginPath();
+          ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
+          ctx.fillStyle = "blue";
+          ctx.fill();
+          ctx.fillStyle = "red";
+          ctx.font = "bold 12px Arial";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
+          if(pinnedCommuter && commuter.id === pinnedCommuter.id){
             ctx.beginPath();
-            ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
-            ctx.fillStyle = "blue";
-            ctx.fill();
-            ctx.fillStyle = "red";
-            ctx.font = "bold 12px Arial";
-            ctx.textAlign = "left";
-            ctx.textBaseline = "middle";
-            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
+            ctx.arc(commuter.position.x, commuter.position.y, 10, 0, 2*Math.PI);
+            ctx.strokeStyle = "orange";
+            ctx.lineWidth = 2;
+            ctx.stroke();
           }
         });
-      }
-      
-      function drawHoveredRoute(){
-        if(hoveredCommuter && hoveredCommuter.route){
-          ctx.save();
-          ctx.strokeStyle = "orange";
-          ctx.lineWidth = 3;
-          ctx.setLineDash([5,5]);
-          hoveredCommuter.route.forEach(edge => {
-            ctx.beginPath();
-            ctx.moveTo(edge.from.x, edge.from.y);
-            ctx.lineTo(edge.to.x, edge.to.y);
-            ctx.stroke();
-          });
-          ctx.restore();
-        }
       }
       
       function drawArrivalEffects(now){
@@ -1072,7 +1090,7 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawBackground();
         drawMetroLines();
-        drawEndpointTabs();
+        // (Endpoint tabs are drawn within drawMetroLines for non‑loops.)
         drawActiveLine();
         drawStations();
         drawTrains();
@@ -1089,8 +1107,27 @@
         requestAnimationFrame(update);
       }
       
+      // === COMMUTER RE‑ROUTING: Called whenever the metro network changes ===
+      function recalcCommuterRoutes(){
+        commuters.forEach(commuter => {
+          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
+            let closest = null, best = Infinity;
+            for(let key in gridNodes){
+              let node = gridNodes[key];
+              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
+              if(d < best){ best = d; closest = node; }
+            }
+            if(closest){
+              commuter.route = computeFastestRoute(closest, commuter.goalNode);
+              commuter.currentEdgeIndex = 0;
+              commuter.progress = 0;
+            }
+          }
+        });
+      }
+      
       // === INITIALIZATION ===
-      initStations();
+      // (No random station initialization; stations are added manually.)
       setInterval(spawnCommuter, commuterSpawnInterval);
       requestAnimationFrame(update);
     })();
