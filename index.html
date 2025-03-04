@@ -45,9 +45,9 @@
     • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
     • The background shows a road grid used for route planning.<br>
     • Stations are now created manually by double‑clicking an intersection and removed via right‑click.<br>
-    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they now continue smoothly from their current position along the current walking edge.<br>
-    • Hover over a commuter (within a generous radius) to see their route, or click on one to “pin” it so that its route stays visible and it gets highlighted until arrival or you click elsewhere.<br>
-    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations – and commuters now correctly board and ride them to their destination stops.<br>
+    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they continue smoothly from their current position along the current walking edge.<br>
+    • Hover over a commuter (within a generous radius) to see their route or click on one to “pin” it so that its route stays visible and is highlighted until arrival or until you click elsewhere. In the drawn route, walking segments are in green and metro segments in blue.<br>
+    • Trains still use their regular update logic – accelerating, dwelling, and moving between stations – and the waiting time for non‑circular lines is now estimated using 2× the line’s total distance divided by the total number of trains (in either direction).<br>
     • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -75,7 +75,7 @@
       const canvasRows = Math.floor(canvas.height / gridSpacing) + 1;
       // Station management:
       const maxStationCount = 26;
-      // Metro edge wait time (approximation):
+      // Default metro wait time (for loops):
       const metroWaitTime = dwellTime / 2;
       
       // === GLOBAL STATE ===
@@ -97,15 +97,19 @@
       const deleteLineButton = document.getElementById('deleteLineButton');
       const counterDiv = document.getElementById('counter');
       
+      // --- Fix 1: Toggle New Line Mode ---
       newLineButton.addEventListener('click', () => {
-        if(activeLine) return;
-        activeLine = {
-          id: nextLineId++,
-          color: lineColorDropdown.value,
-          stations: [],
-          trains: [],
-          editingMode: "new"
-        };
+        if(activeLine && activeLine.editingMode === "new"){
+          activeLine = null;
+        } else {
+          activeLine = {
+            id: nextLineId++,
+            color: lineColorDropdown.value,
+            stations: [],
+            trains: [],
+            editingMode: "new"
+          };
+        }
       });
       deleteLineButton.addEventListener('click', () => {
         metroLines = metroLines.filter(line => line.color !== lineColorDropdown.value);
@@ -121,7 +125,7 @@
           validIntersections.push({ col, row, x: col * gridSpacing, y: row * gridSpacing });
         }
       }
-      // (Removed random station spawning – stations are now created manually.)
+      // (Stations are now created manually via double‑click.)
       
       // === OFFSCREEN BACKGROUND ===
       const bgCanvas = document.createElement("canvas");
@@ -403,7 +407,7 @@
             }
           });
         }
-        // Metro edges:
+        // Metro edges with improved waiting time for non‑loops:
         metroLines.forEach(line => {
           for(let i = 0; i < line.stations.length - 1; i++){
             let a = line.stations[i], b = line.stations[i+1];
@@ -411,7 +415,18 @@
             let keyB = b.col + "," + b.row;
             if(gridNodes[keyA] && gridNodes[keyB]){
               let d = distance(a.x, a.y, b.x, b.y);
-              let metroCost = computeTravelTime(d) + metroWaitTime;
+              let waitingTime;
+              if(!line.isLoop){
+                let totalDistance = 0;
+                for(let j = 0; j < line.stations.length - 1; j++){
+                  totalDistance += distance(line.stations[j].x, line.stations[j].y, line.stations[j+1].x, line.stations[j+1].y);
+                }
+                let numTrains = (line.trains && line.trains.length) ? line.trains.length : 1;
+                waitingTime = (2 * totalDistance) / (numTrains * maxSpeed);
+              } else {
+                waitingTime = metroWaitTime;
+              }
+              let metroCost = computeTravelTime(d) + waitingTime;
               graph[keyA].push({ 
                 from: gridNodes[keyA], 
                 to: gridNodes[keyB], 
@@ -466,13 +481,11 @@
         return route;
       }
       
-      // --- FIX 1: Recalculate route using the commuter's current position ---
+      // --- Fix: When recalculating a commuter’s route, if they are in the middle of a walking edge, use their current position (instead of snapping to the nearest grid node).
       function recalcCommuterRoutes(){
         commuters.forEach(commuter => {
-          if(commuter.state === "walking"){
-            // If on a walking edge, use the endpoint they’re heading toward.
-            if(commuter.route && commuter.currentEdgeIndex < commuter.route.length &&
-               commuter.route[commuter.currentEdgeIndex].mode === "walk"){
+          if(commuter.state === "walking" || commuter.state === "waitingForTrain"){
+            if(commuter.route && commuter.currentEdgeIndex < commuter.route.length && commuter.route[commuter.currentEdgeIndex].mode === "walk"){
               let edge = commuter.route[commuter.currentEdgeIndex];
               let endpoint = edge.to;
               let tempEdge = {
@@ -486,7 +499,6 @@
               commuter.currentEdgeIndex = 0;
               commuter.progress = 0;
             } else {
-              // Fallback: use the nearest grid node.
               let closest = null, best = Infinity;
               for(let key in gridNodes){
                 let node = gridNodes[key];
@@ -499,23 +511,11 @@
                 commuter.progress = 0;
               }
             }
-          } else if(commuter.state === "waitingForTrain"){
-            let closest = null, best = Infinity;
-            for(let key in gridNodes){
-              let node = gridNodes[key];
-              let d = distance(commuter.position.x, commuter.position.y, node.x, node.y);
-              if(d < best){ best = d; closest = node; }
-            }
-            if(closest){
-              commuter.route = computeFastestRoute(closest, commuter.goalNode);
-              commuter.currentEdgeIndex = 0;
-              commuter.progress = 0;
-            }
           }
         });
       }
       
-      // --- FIX 2: Ensure commuters get on trains by setting destinationStation ---
+      // --- Fix: When spawning a commuter, set destinationStation so boarding works correctly.
       function spawnCommuter(){
         let gridKeys = Object.keys(gridNodes);
         if(gridKeys.length < 2) return;
@@ -533,7 +533,7 @@
           id: nextCommuterId++,
           startNode,
           goalNode,
-          destinationStation: goalNode, // Set destination for proper drop-off.
+          destinationStation: goalNode, // For proper drop-off during boarding.
           route, // array of edges
           currentEdgeIndex: 0,
           progress: 0,
@@ -963,15 +963,22 @@
         }
       }
       
+      // --- Fix 2: Draw commuter route segments in different colors based on mode ---
       function drawHoveredRoute(){
         let commuterToDraw = pinnedCommuter || hoveredCommuter;
         if(commuterToDraw && commuterToDraw.route){
           ctx.save();
-          ctx.strokeStyle = "orange";
           ctx.lineWidth = 3;
           ctx.setLineDash([5,5]);
           commuterToDraw.route.forEach(edge => {
             ctx.beginPath();
+            if(edge.mode === "walk"){
+              ctx.strokeStyle = "green";
+            } else if(edge.mode === "metro"){
+              ctx.strokeStyle = "blue";
+            } else {
+              ctx.strokeStyle = "orange";
+            }
             ctx.moveTo(edge.from.x, edge.from.y);
             ctx.lineTo(edge.to.x, edge.to.y);
             ctx.stroke();
