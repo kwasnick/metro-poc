@@ -45,9 +45,9 @@
     • Draw and modify metro lines as before (with draggable endpoint tabs to extend or close a loop).<br>
     • The background shows a road grid used for route planning.<br>
     • Stations are created manually by double‑clicking an intersection and removed via right‑click.<br>
-    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they continue smoothly from their current position along the current walking edge.<br>
-    • Each commuter’s state is now one of: walking, waiting for a train, or riding a train. When waiting, if they board the correct train their state changes to “riding” and the train updates their position. (If you mouse over or pin a commuter, their route and state are indicated.)<br>
-    • Trains still move according to their update logic – accelerating, dwelling, and moving between stations – and non‑circular lines now use an improved waiting‑time estimate.<br>
+    • Commuters spawn at random grid intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes. When recalculating, they continue smoothly from their current position along the walking edge.<br>
+    • Each commuter’s state is one of: walking, waitingForTrain, riding, or transferring. When a commuter is highlighted (moused over or pinned) the current state is displayed.<br>
+    • When boarding a metro edge, the commuter saves a target stop and stays “riding” until the train reaches that station. If a transfer is required, a fixed transfer delay is imposed before boarding another train.<br>
     • Enjoy the multi‑modal simulation!
   </p>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -77,12 +77,14 @@
       const maxStationCount = 26;
       // Default metro wait time (for loops):
       const metroWaitTime = dwellTime / 2;
+      // Transfer delay in ms:
+      const transferTime = 3000;
       
       // === GLOBAL STATE ===
       let stations = [];  // { id, x, y, col, row }
       let metroLines = []; // { id, color, stations: [...], trains: [], isLoop }
       let activeLine = null; // for new, modify, or extend modes
-      let commuters = []; // { id, startNode, goalNode, destinationStation, route, currentEdgeIndex, progress, state, position, lastUpdate }
+      let commuters = []; // { id, startNode, goalNode, destinationStation, route, currentEdgeIndex, progress, state, position, lastUpdate, targetStop, transferStart }
       let nextLineId = 1, nextTrainId = 1, nextCommuterId = 1;
       let arrivedCount = 0;
       let arrivalEffects = []; // { x, y, startTime }
@@ -342,31 +344,41 @@
               let p = elapsed / train.travelTime;
               let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p,1));
               train.progress = ease;
-              // Compute current train position:
+              // Update onboard commuters’ positions (they ride the train)
               let x = from.x + (to.x - from.x) * ease;
               let y = from.y + (to.y - from.y) * ease;
-              // Update position for each onboard commuter (so they “ride” the train)
               train.onboard.forEach(commuter => {
                 commuter.position = { x, y };
               });
               if(p >= 1){
                 let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
-                // Drop off only those commuters whose next edge ends at this station.
                 train.onboard.forEach(commuter => {
-                  if(commuter.route && commuter.route.length > 0 && commuter.route[0].to.id === arrivalStation.id){
+                  if(commuter.targetStop && commuter.targetStop.id === arrivalStation.id){
                     commuter.currentStation = arrivalStation;
-                    commuter.route.shift();
-                    if(commuter.destinationStation && commuter.destinationStation.id === arrivalStation.id){
-                      commuter.arrived = true;
-                      arrivedCount++;
-                      arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
+                    // Remove the metro edge from the commuter's route
+                    if(commuter.route && commuter.route.length > 0 && commuter.route[0].mode === "metro"){
+                      commuter.route.shift();
+                    }
+                    commuter.targetStop = null;
+                    // If the next edge is metro, initiate a transfer delay; otherwise, if destination reached, mark as arrived.
+                    if(commuter.route && commuter.route.length > 0 && commuter.route[0].mode === "metro"){
+                      commuter.state = "transferring";
+                      commuter.transferStart = now;
                     } else {
-                      commuter.state = "walking";
+                      if(commuter.destinationStation && commuter.destinationStation.id === arrivalStation.id){
+                        commuter.arrived = true;
+                        arrivedCount++;
+                        arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
+                      } else {
+                        commuter.state = "walking";
+                      }
                     }
                   }
+                  // Otherwise, they remain riding.
                 });
-                // Clear onboard list for this segment.
-                train.onboard = [];
+                // Note: Do not clear onboard list entirely—keep commuters that haven't reached their target.
+                // Remove those who have been dropped off:
+                train.onboard = train.onboard.filter(commuter => commuter.state === "riding");
                 train.originalSegment = null;
                 if(!line.isLoop){
                   if(train.direction === 1 && train.currentSegment === line.stations.length - 2){
@@ -549,19 +561,25 @@
           progress: 0,
           state: "walking",
           position: { x: startNode.x, y: startNode.y },
-          lastUpdate: performance.now()
+          lastUpdate: performance.now(),
+          targetStop: null,      // will be set upon boarding a metro edge
+          transferStart: null    // for transfer delay
         };
         commuters.push(commuter);
       }
       
       function updateCommuters(now){
         commuters.forEach(commuter => {
-          // If the commuter is riding a train, let the train update their position.
           if(commuter.state === "riding"){
-            // No independent update here.
+            // Riding: position updated by train; do nothing here.
             return;
-          }
-          if(commuter.state === "walking"){
+          } else if(commuter.state === "transferring"){
+            if(now - commuter.transferStart >= transferTime){
+              commuter.state = "waitingForTrain";
+            }
+            commuter.lastUpdate = now;
+            return;
+          } else if(commuter.state === "walking"){
             if(!commuter.route || commuter.currentEdgeIndex >= commuter.route.length){
               commuter.arrived = true;
               arrivedCount++;
@@ -585,7 +603,7 @@
                 };
               }
             } else if(edge.mode === "metro"){
-              // Transition to waiting state.
+              // Transition from walking to waiting for a train.
               commuter.state = "waitingForTrain";
               commuter.position = { x: edge.from.x, y: edge.from.y };
             }
@@ -594,7 +612,6 @@
             let edge = commuter.route[commuter.currentEdgeIndex];
             let candidate = edge.line.trains.find(train => {
               if(train.state !== "dwell") return false;
-              // Check that the train is at the station matching edge.from and heading in the correct direction.
               let posStation = (train.direction === 1) ? train.line.stations[train.currentSegment] : train.line.stations[train.currentSegment+1];
               if(posStation.col === edge.from.col && posStation.row === edge.from.row){
                 if(train.direction === 1){
@@ -608,8 +625,8 @@
               return false;
             });
             if(candidate){
-              // Board the train: change state to "riding" and add commuter to train's onboard list.
               commuter.state = "riding";
+              commuter.targetStop = edge.to; // save target stop for this metro ride
               candidate.onboard = candidate.onboard || [];
               candidate.onboard.push(commuter);
             }
@@ -983,7 +1000,7 @@
         }
       }
       
-      // --- Fix 2: Draw commuter route segments in different colors based on mode.
+      // --- Fix 2: Draw commuter route segments in different colors based on mode ---
       function drawHoveredRoute(){
         let commuterToDraw = pinnedCommuter || hoveredCommuter;
         if(commuterToDraw && commuterToDraw.route){
@@ -1050,7 +1067,7 @@
             ctx.fillRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
             ctx.strokeStyle = "black";
             ctx.strokeRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
-            // Draw onboard commuters as small circles inside the train.
+            // Draw onboard commuters as small circles.
             if(train.onboard && train.onboard.length > 0){
               let n = train.onboard.length;
               let spacing = trainWidth / (n + 1);
@@ -1090,20 +1107,23 @@
         });
       }
       
-      // Draw only commuters that are walking or waiting.
+      // --- Fix 1: Show commuter state when highlighted.
       function drawCommuters(){
         commuters.forEach(commuter => {
-          // If riding, draw an extra label indicating that state.
+          let isHighlighted = (pinnedCommuter && commuter.id === pinnedCommuter.id) ||
+                              (hoveredCommuter && commuter.id === hoveredCommuter.id);
           if(commuter.state === "riding"){
             ctx.beginPath();
             ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
             ctx.fillStyle = "purple";
             ctx.fill();
-            ctx.fillStyle = "black";
-            ctx.font = "bold 10px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "bottom";
-            ctx.fillText("Riding", commuter.position.x, commuter.position.y - 8);
+            if(isHighlighted){
+              ctx.fillStyle = "black";
+              ctx.font = "bold 10px Arial";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "bottom";
+              ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y - 8);
+            }
           } else {
             ctx.beginPath();
             ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2*Math.PI);
@@ -1114,6 +1134,11 @@
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
             ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
+            if(isHighlighted){
+              ctx.fillStyle = "black";
+              ctx.font = "bold 10px Arial";
+              ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y + 15);
+            }
           }
         });
       }
@@ -1180,7 +1205,6 @@
       }
       
       // === INITIALIZATION ===
-      // (Stations are added manually via double‑click.)
       setInterval(spawnCommuter, commuterSpawnInterval);
       requestAnimationFrame(update);
     })();
