@@ -352,28 +352,33 @@
                 // For each onboard commuter, if their targetStop matches arrivalStation, they disembark.
                 // For each onboard commuter, check if it’s time to get off.
                 train.onboard.forEach(commuter => {
+                  // all commuters should move to next edge
+                  if (commuter.route && commuter.route[commuter.currentEdgeIndex] && 
+                    commuter.route[commuter.currentEdgeIndex].mode === "metro" &&
+                    commuter.route[commuter.currentEdgeIndex].to.id === arrivalStation.id
+                  ) {
+                    commuter.currentEdgeIndex += 1;
+                  }
+                  // If this is the commuter's target stop, they disembark.
                   if(commuter.state === "riding" && commuter.targetStop && commuter.targetStop.id === arrivalStation.id){
-                    commuter.currentStation = arrivalStation;
-                    // Count and remove consecutive metro edges that have been ridden.
-                    let count = 0;
-                    while(count < commuter.route.length && commuter.route[count].mode === "metro"){
-                      count++;
+                    if (pinnedCommuter == commuter) {
+                      console.log("commuter disembarks:", commuter);
                     }
-                    commuter.route.splice(0, count);
-                    commuter.currentEdgeIndex = 0; // <-- Reset the route index after disembarking
                     commuter.targetStop = null;
-                    // If there are still metro edges, enter transferring state.
-                    if(commuter.route.length > 0 && commuter.route[0].mode === "metro"){
-                      commuter.state = "transferring";
-                      commuter.transferStart = now;
+                    commuter.currentStation = arrivalStation;
+                    if (commuter.currentEdgeIndex >= commuter.route.length) {
+                      // Finished their route.
+                      commuter.arrived = true;
+                      arrivedCount++;
+                      arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
                     } else {
-                      // Otherwise, if at destination, mark arrived; else resume walking.
-                      if(commuter.destinationStation && commuter.destinationStation.id === arrivalStation.id){
-                        commuter.arrived = true;
-                        arrivedCount++;
-                        arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
+                      // if the next edge is a metro edge, enter transferring state.
+                      if(commuter.route[commuter.currentEdgeIndex].mode === "metro"){
+                        commuter.state = "transferring";
+                        commuter.transferStart = now;
                       } else {
                         commuter.state = "walking";
+                        commuter.progress = 0;
                       }
                     }
                   }
@@ -450,16 +455,17 @@
                 waitingTime = metroWaitTime;
               }
               let metroCost = computeTravelTime(d) + waitingTime;
+              // Use station objects directly so they include an "id"
               graph[keyA].push({ 
-                from: gridNodes[keyA], 
-                to: gridNodes[keyB], 
+                from: a, 
+                to: b, 
                 mode: "metro", 
                 cost: metroCost, 
                 line 
               });
               graph[keyB].push({ 
-                from: gridNodes[keyB], 
-                to: gridNodes[keyA], 
+                from: b, 
+                to: a, 
                 mode: "metro", 
                 cost: metroCost, 
                 line 
@@ -467,6 +473,7 @@
             }
           }
         });
+
         return graph;
       }
       
@@ -570,6 +577,24 @@
       }
       
       function updateCommuters(now){
+
+        function setTargetStop(commuter){
+          // if commuter is at a station or on the metro, they should always have a 'target stop' where they will get off
+          // when they get off, they will either transfer to another line or walk
+          let edge = commuter.route[commuter.currentEdgeIndex];
+          if (edge.mode !== "metro") return;
+
+          let target = edge.to;
+          let i = commuter.currentEdgeIndex;
+          let line = edge.line;
+          while(i < commuter.route.length && commuter.route[i].mode === "metro" && commuter.route[i].line === line){
+            target = commuter.route[i].to;
+            i++;
+          }
+
+          commuter.targetStop = target;
+        }
+
         commuters.forEach(commuter => {
           // If riding, their position is updated by the train.
           if(commuter.state === "riding"){
@@ -594,6 +619,9 @@
               let dt = now - commuter.lastUpdate;
               commuter.progress += dt / travelTime;
               if(commuter.progress >= 1){
+                if (commuter == pinnedCommuter) {
+                  console.log("Pinned commuter moving to next edge");
+                }
                 commuter.position = { x: edge.to.x, y: edge.to.y };
                 commuter.currentEdgeIndex++;
                 commuter.progress = 0;
@@ -604,16 +632,12 @@
                 };
               }
             } else if(edge.mode === "metro"){
-              // Compute targetStop as the final station in contiguous metro edges.
-              let target = edge.to;
-              let i = commuter.currentEdgeIndex;
-              while(i < commuter.route.length && commuter.route[i].mode === "metro"){
-                target = commuter.route[i].to;
-                i++;
-              }
-              commuter.targetStop = target;
+              setTargetStop(commuter);
               commuter.state = "waitingForTrain";
               commuter.position = { x: edge.from.x, y: edge.from.y };
+              if(commuter == pinnedCommuter) {
+                console.log("Pinned commuter waiting for train: ", commuter);
+              }
             }
             commuter.lastUpdate = now;
           } else if(commuter.state === "waitingForTrain"){
@@ -627,13 +651,7 @@
             let edge = commuter.route[commuter.currentEdgeIndex];
             // If the commuter doesn't have a targetStop (e.g. after a transfer), recalc it:
             if(!commuter.targetStop && edge.mode === "metro"){
-              let target = edge.to;
-              let i = commuter.currentEdgeIndex;
-              while(i < commuter.route.length && commuter.route[i].mode === "metro"){
-                target = commuter.route[i].to;
-                i++;
-              }
-              commuter.targetStop = target;
+              setTargetStop(commuter);
               commuter.position = { x: edge.from.x, y: edge.from.y };
             }
             // Look for a train in dwell state at the correct station:
@@ -904,6 +922,7 @@
         }
         if(found){
           pinnedCommuter = found;
+          console.log("Pinning: ", pinnedCommuter);
         } else {
           pinnedCommuter = null;
         }
@@ -1135,64 +1154,22 @@
         });
       }
 
-      function printRoute(route) {
+      function printRoute(commuter) {
+        route = commuter.route;
         if (!route || route.length === 0) return "";
         let segments = [];
         let i = 0;
-        while (i < route.length) {
+        for  (i = 0; i < route.length; i++) {
+          let prefix = i == commuter.currentEdgeIndex ? ">" : " ";
           let currentEdge = route[i];
           let mode = currentEdge.mode;
           let start = currentEdge.from;
           let end = currentEdge.to;
-          
           if (mode === "walk") {
-            // Compute the direction vector for the current walking edge.
-            let dx = end.col - start.col;
-            let dy = end.row - start.row;
-            let j = i + 1;
-            
-            // Group contiguous walking edges only if they continue in the same direction.
-            while (
-              j < route.length &&
-              route[j].mode === "walk" &&
-              route[j].from.col === end.col &&
-              route[j].from.row === end.row
-            ) {
-              let nextDx = route[j].to.col - route[j].from.col;
-              let nextDy = route[j].to.row - route[j].from.row;
-              if (nextDx === dx && nextDy === dy) {
-                end = route[j].to;
-                j++;
-              } else {
-                break;
-              }
-            }
-            segments.push(`walk from ${start.col},${start.row} to ${end.col},${end.row}`);
-            i = j;
-            
+            segments.push(`${prefix} walk from ${start.col},${start.row} to ${end.col},${end.row}`);
           } else if (mode === "metro") {
             let lineColor = currentEdge.line ? currentEdge.line.color : "";
-            let j = i + 1;
-            
-            // Group contiguous metro edges if they belong to the same line and connect.
-            while (
-              j < route.length &&
-              route[j].mode === "metro" &&
-              currentEdge.line && route[j].line &&
-              route[j].line.color === lineColor &&
-              route[j].from.col === end.col &&
-              route[j].from.row === end.row
-            ) {
-              end = route[j].to;
-              j++;
-            }
-            segments.push(`train on ${lineColor} line from ${start.col},${start.row} to ${end.col},${end.row}`);
-            i = j;
-            
-          } else {
-            // For any other mode, just output a generic message.
-            segments.push(`${mode} from ${start.col},${start.row} to ${end.col},${end.row}`);
-            i++;
+            segments.push(`${prefix} train on ${lineColor} line from ${start.id} to ${end.id}`);
           }
         }
         return segments
@@ -1214,13 +1191,14 @@
             ctx.font = "bold 12px Arial";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row, commuter.position.x + 8, commuter.position.y);
+            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row + " (" + commuter.progress + ")", commuter.position.x + 8, commuter.position.y);
             ctx.fillStyle = "black";
             ctx.font = "bold 10px Arial";
-            let routePlan = printRoute(commuter.route);
+            let routePlan = printRoute(commuter);
             for (let i=0; i<routePlan.length; i++) {
               ctx.fillText(routePlan[i], commuter.position.x + 8, commuter.position.y - ( 15 * routePlan.length) +15 * i);
             }
+
           }
         });
       }
