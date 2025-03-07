@@ -57,7 +57,7 @@
       const ctx = canvas.getContext('2d');
       // Metro/Train constants:
       const acceleration = 0.0005;
-      const maxSpeed = 0.05;
+      const maxSpeed = 1.0; // px/frame
       const dwellTime = 2000;
       const trainWidth = 30, trainHeight = 15;
       // Station and line drawing:
@@ -66,8 +66,8 @@
       const tabMargin = 10;
       const tabRadius = 6;
       // Commuter/Walking constants:
-      const commuterSpawnInterval = 3000;
-      const walkingSpeed = 0.002; // px/ms
+      const commuterSpawnInterval = 1500;
+      const walkingSpeed = 0.05; // px/frame
       // Grid parameters:
       const gridSpacing = 50;
       const canvasCols = Math.floor(canvas.width / gridSpacing) + 1;
@@ -269,7 +269,8 @@
             dwellStart: now,
             travelTime: 0,
             onboard: [],
-            originalSegment: null
+            originalSegment: null,
+            position: {x: line.stations[0].x, y: line.stations[0].y}
           });
           line.trains.push({
             id: nextTrainId++,
@@ -281,36 +282,94 @@
             dwellStart: now,
             travelTime: 0,
             onboard: [],
-            originalSegment: null
+            originalSegment: null,
+            position: {x: line.stations[line.stations.length - 2].x, y: line.stations[line.stations.length - 2].y}
           });
         } else {
-          let idx1 = 0;
-          let idx2 = Math.floor((line.stations.length - 1) / 2);
           line.trains.push({
             id: nextTrainId++,
             line: line,
             direction: 1,
-            currentSegment: idx1,
+            currentSegment: 0,
             progress: 0,
             state: "dwell",
             dwellStart: now,
             travelTime: 0,
             onboard: [],
-            originalSegment: null
+            originalSegment: null,
+            position: {x: line.stations[0].x, y: line.stations[0].y}
           });
           line.trains.push({
             id: nextTrainId++,
             line: line,
             direction: -1,
-            currentSegment: idx2,
+            currentSegment: 0,
             progress: 0,
             state: "dwell",
             dwellStart: now,
             travelTime: 0,
             onboard: [],
-            originalSegment: null
+            originalSegment: null,
+            position: {x: line.stations[0].x, y: line.stations[0].y}
           });
         }
+      }
+
+      function offloadPassengers(train, now) {
+        let line = train.line;
+        let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
+        // For each onboard commuter, if their targetStop matches arrivalStation, they disembark.
+        // For each onboard commuter, check if it’s time to get off.
+        train.onboard.forEach(commuter => {
+          // all commuters should move to next edge
+          if (commuter.route && commuter.route[commuter.currentEdgeIndex] && 
+            commuter.route[commuter.currentEdgeIndex].mode === "metro" &&
+            commuter.route[commuter.currentEdgeIndex].to.id === arrivalStation.id
+          ) {
+            commuter.currentEdgeIndex += 1;
+          }
+          // If this is the commuter's target stop, they disembark.
+          if(commuter.state === "riding" && commuter.targetStop && commuter.targetStop.id === arrivalStation.id){
+            if (pinnedCommuter == commuter) {
+              console.log("commuter disembarks:", commuter);
+            }
+            commuter.targetStop = null;
+            commuter.currentStation = arrivalStation;
+            if (commuter.currentEdgeIndex >= commuter.route.length) {
+              // Finished their route.
+              commuter.arrived = true;
+              arrivedCount++;
+              arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
+            } else {
+              commuter.position = commuter.route[commuter.currentEdgeIndex].from;
+              // if the next edge is a metro edge, enter transferring state.
+              if(commuter.route[commuter.currentEdgeIndex].mode === "metro"){
+                commuter.state = "transferring";
+                commuter.transferStart = now;
+              } else {
+                commuter.state = "walking";
+                commuter.progress = 0;
+              }
+            }
+          }
+        });
+        // Filter out those who disembarked.
+        train.onboard = train.onboard.filter(commuter => commuter.state === "riding");
+        train.originalSegment = null;
+        if(!line.isLoop){
+          if(train.direction === 1 && train.currentSegment === line.stations.length - 2){
+            train.direction = -1;
+          } else if(train.direction === -1 && train.currentSegment === 0){
+            train.direction = 1;
+          } else {
+            train.currentSegment += train.direction;
+          }
+        } else {
+          train.currentSegment = (train.currentSegment + train.direction) % (line.stations.length - 1);
+          if(train.currentSegment < 0) train.currentSegment += (line.stations.length - 1);
+        }
+        train.state = "dwell";
+        train.dwellStart = now;
       }
       
       function updateTrains(now){
@@ -337,71 +396,24 @@
                 train.originalSegment = { from: { ...from }, to: { ...to }, travelTime: train.travelTime };
               }
             } else if(train.state === "moving"){
-              let elapsed = now - train.departureTime;
-              let p = elapsed / train.travelTime;
-              let ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(p,1));
-              train.progress = ease;
-              let x = from.x + (to.x - from.x) * ease;
-              let y = from.y + (to.y - from.y) * ease;
+              let dx = to.x - from.x, dy = to.y - from.y;
+              let normalized_dx = dx / segLength, normalized_dy = dy / segLength;
+              let d = distance(train.position.x, train.position.y, to.x, to.y);
+              if (d < maxSpeed) {
+                // we reached the next station
+                train.position = { x: to.x, y: to.y };
+                offloadPassengers(train, now);
+              } else {
+                train.position = { 
+                  x: train.position.x + normalized_dx * maxSpeed,
+                  y: train.position.y + normalized_dy * maxSpeed,
+                };
+              }
+              
               // Update onboard commuters' positions so they ride along.
               train.onboard.forEach(commuter => {
-                commuter.position = { x, y };
+                commuter.position = { x: train.position.x, y: train.position.y };
               });
-              if(p >= 1){
-                let arrivalStation = train.originalSegment ? train.originalSegment.to : to;
-                // For each onboard commuter, if their targetStop matches arrivalStation, they disembark.
-                // For each onboard commuter, check if it’s time to get off.
-                train.onboard.forEach(commuter => {
-                  // all commuters should move to next edge
-                  if (commuter.route && commuter.route[commuter.currentEdgeIndex] && 
-                    commuter.route[commuter.currentEdgeIndex].mode === "metro" &&
-                    commuter.route[commuter.currentEdgeIndex].to.id === arrivalStation.id
-                  ) {
-                    commuter.currentEdgeIndex += 1;
-                  }
-                  // If this is the commuter's target stop, they disembark.
-                  if(commuter.state === "riding" && commuter.targetStop && commuter.targetStop.id === arrivalStation.id){
-                    if (pinnedCommuter == commuter) {
-                      console.log("commuter disembarks:", commuter);
-                    }
-                    commuter.targetStop = null;
-                    commuter.currentStation = arrivalStation;
-                    if (commuter.currentEdgeIndex >= commuter.route.length) {
-                      // Finished their route.
-                      commuter.arrived = true;
-                      arrivedCount++;
-                      arrivalEffects.push({ x: arrivalStation.x, y: arrivalStation.y, startTime: now });
-                    } else {
-                      // if the next edge is a metro edge, enter transferring state.
-                      if(commuter.route[commuter.currentEdgeIndex].mode === "metro"){
-                        commuter.state = "transferring";
-                        commuter.transferStart = now;
-                      } else {
-                        commuter.state = "walking";
-                        commuter.progress = 0;
-                      }
-                    }
-                  }
-                });
-                // Filter out those who disembarked.
-                train.onboard = train.onboard.filter(commuter => commuter.state === "riding");
-                train.originalSegment = null;
-                if(!line.isLoop){
-                  if(train.direction === 1 && train.currentSegment === line.stations.length - 2){
-                    train.direction = -1;
-                  } else if(train.direction === -1 && train.currentSegment === 0){
-                    train.direction = 1;
-                  } else {
-                    train.currentSegment += train.direction;
-                  }
-                } else {
-                  train.currentSegment = (train.currentSegment + train.direction) % (line.stations.length - 1);
-                  if(train.currentSegment < 0) train.currentSegment += (line.stations.length - 1);
-                }
-                train.state = "dwell";
-                train.dwellStart = now;
-                train.progress = 0;
-              }
             }
           });
         });
@@ -614,23 +626,34 @@
             }
             let edge = commuter.route[commuter.currentEdgeIndex];
             if(edge.mode === "walk"){
-              let d = distance(edge.from.x, edge.from.y, edge.to.x, edge.to.y);
-              let travelTime = d / walkingSpeed;
-              let dt = now - commuter.lastUpdate;
-              commuter.progress += dt / travelTime;
-              if(commuter.progress >= 1){
-                if (commuter == pinnedCommuter) {
-                  console.log("Pinned commuter moving to next edge");
-                }
+              let d = distance(edge.to.x, edge.to.y, commuter.position.x, commuter.position.y);
+              if (d < walkingSpeed) {
                 commuter.position = { x: edge.to.x, y: edge.to.y };
                 commuter.currentEdgeIndex++;
-                commuter.progress = 0;
               } else {
+                let dx = edge.to.x - commuter.position.x, dy = edge.to.y - commuter.position.y;
+                let normalized_dx = dx / d, normalized_dy = dy / d;
                 commuter.position = {
-                  x: edge.from.x + (edge.to.x - edge.from.x) * commuter.progress,
-                  y: edge.from.y + (edge.to.y - edge.from.y) * commuter.progress
+                  x: commuter.position.x + normalized_dx * walkingSpeed,
+                  y: commuter.position.y + normalized_dy * walkingSpeed
                 };
               }
+              // let travelTime = d / walkingSpeed;
+              // let dt = now - commuter.lastUpdate;
+              // commuter.progress += dt / travelTime;
+              // if(commuter.progress >= 1){
+              //   if (commuter == pinnedCommuter) {
+              //     console.log("Pinned commuter moving to next edge");
+              //   }
+              //   commuter.position = { x: edge.to.x, y: edge.to.y };
+              //   commuter.currentEdgeIndex++;
+              //   commuter.progress = 0;
+              // } else {
+              //   commuter.position = {
+              //     x: edge.from.x + (edge.to.x - edge.from.x) * commuter.progress,
+              //     y: edge.from.y + (edge.to.y - edge.from.y) * commuter.progress
+              //   };
+              // }
             } else if(edge.mode === "metro"){
               setTargetStop(commuter);
               commuter.state = "waitingForTrain";
@@ -1076,80 +1099,10 @@
         hoveredTrain = null;
         metroLines.forEach(line => {
           line.trains.forEach(train => {
-            let segFrom, segTo;
-            if(train.state === "moving" && train.originalSegment){
-              segFrom = train.originalSegment.from;
-              segTo = train.originalSegment.to;
-            } else {
-              if(train.direction === 1){
-                segFrom = line.stations[train.currentSegment];
-                segTo = line.stations[train.currentSegment+1];
-              } else {
-                segFrom = line.stations[train.currentSegment+1];
-                segTo = line.stations[train.currentSegment];
-              }
-            }
-            let dx = segTo.x - segFrom.x, dy = segTo.y - segFrom.y;
-            let ease = train.progress;
-            let x = segFrom.x + dx * ease;
-            let y = segFrom.y + dy * ease;
-            let baseOffset = getSegmentOffset(line, train.currentSegment);
-            let offset = 6;
-            let group = line.trains.filter(t => t.currentSegment === train.currentSegment);
-            group.sort((a,b) => a.id - b.id);
-            let idx = group.findIndex(t => t.id === train.id);
-            let groupOffset = (group.length % 2 === 1)
-              ? (idx - Math.floor(group.length/2)) * offset
-              : (idx - group.length/2 + 0.5) * offset;
-            let totalOffset = baseOffset + groupOffset;
-            let len = Math.sqrt(dx*dx + dy*dy);
-            let offX = -dy/len * totalOffset;
-            let offY = dx/len * totalOffset;
-            x += offX;
-            y += offY;
-            let angle = Math.atan2(dy, dx);
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(angle);
-            ctx.fillStyle = darkenColor(line.color, 0.8);
-            ctx.fillRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
-            ctx.strokeStyle = "black";
-            ctx.strokeRect(-trainWidth/2, -trainHeight/2, trainWidth, trainHeight);
-            if(train.onboard && train.onboard.length > 0){
-              let n = train.onboard.length;
-              let spacing = trainWidth / (n + 1);
-              for(let i = 0; i < n; i++){
-                let paxOffsetX = -trainWidth/2 + spacing*(i+1);
-                ctx.beginPath();
-                ctx.arc(paxOffsetX, 0, 3, 0, 2*Math.PI);
-                ctx.fillStyle = "blue";
-                ctx.fill();
-                ctx.fillStyle = "white";
-                ctx.font = "8px Arial";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(train.onboard[i].destinationStation ? train.onboard[i].destinationStation.id : "", paxOffsetX, 0);
-              }
-            }
-            ctx.restore();
-            let invX = currentMousePos.x - x, invY = currentMousePos.y - y;
-            let cos = Math.cos(-angle), sin = Math.sin(-angle);
-            let localX = invX * cos - invY * sin;
-            let localY = invX * sin + invY * cos;
-            if(localX >= -trainWidth/2 && localX <= trainWidth/2 && localY >= -trainHeight/2 && localY <= trainHeight/2){
-              hoveredTrain = train;
-            }
-            if(train.state === "moving" && train.originalSegment){
-              ctx.save();
-              ctx.globalAlpha = 0.3;
-              ctx.strokeStyle = line.color;
-              ctx.lineWidth = 4;
-              ctx.beginPath();
-              ctx.moveTo(train.originalSegment.from.x, train.originalSegment.from.y);
-              ctx.lineTo(train.originalSegment.to.x, train.originalSegment.to.y);
-              ctx.stroke();
-              ctx.restore();
-            }
+            ctx.beginPath();
+            ctx.arc(train.position.x, train.position.y, 15, 0, 2*Math.PI);
+            ctx.fillStyle = line.color;
+            ctx.fill();
           });
         });
       }
@@ -1191,7 +1144,7 @@
             ctx.font = "bold 12px Arial";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            ctx.fillText("→ " + commuter.goalNode.col + "," + commuter.goalNode.row + " (" + commuter.progress + ")", commuter.position.x + 8, commuter.position.y);
+            ctx.fillText("→ " + commuter.position.x.toFixed(3) +  "," +  commuter.position.y.toFixed(3), commuter.position.x + 8, commuter.position.y);
             ctx.fillStyle = "black";
             ctx.font = "bold 10px Arial";
             let routePlan = printRoute(commuter);
@@ -1225,21 +1178,7 @@
           }
         }
       }
-      
-      function updateTrainPopup(){
-        if(hoveredTrain){
-          let list = (hoveredTrain.onboard && hoveredTrain.onboard.length > 0)
-                    ? hoveredTrain.onboard.map(p => p.destinationStation ? p.destinationStation.id : "").join(", ")
-                    : "No passengers";
-          trainPopup.textContent = "Passengers: " + list;
-          trainPopup.style.left = (currentMousePos.x + 15) + "px";
-          trainPopup.style.top = (currentMousePos.y + 15) + "px";
-          trainPopup.style.display = "block";
-        } else {
-          trainPopup.style.display = "none";
-        }
-      }
-      
+
       function drawBackground(){
         ctx.drawImage(bgCanvas, 0, 0);
       }
@@ -1259,7 +1198,6 @@
       function update(now){
         updateTrains(now);
         updateCommuters(now);
-        updateTrainPopup();
         draw();
         requestAnimationFrame(update);
       }
