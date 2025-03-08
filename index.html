@@ -1,43 +1,50 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>Metro System Designer & Simulator – Multi‑Modal</title>
-  <!-- Link to your external CSS file if you want to separate styling -->
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div id="controls">
-    <label for="lineColorDropdown">Line Color:</label>
-    <select id="lineColorDropdown">
-      <option value="#ff0000" selected>Red</option>
-      <option value="#0000ff">Blue</option>
-      <option value="#00ff00">Green</option>
-      <option value="#ffff00">Yellow</option>
-      <option value="#800080">Purple</option>
-      <option value="#ffa500">Orange</option>
-      <option value="#00ffff">Cyan</option>
-      <option value="#ff00ff">Magenta</option>
-      <option value="#8b4513">Brown</option>
-      <option value="#000000">Black</option>
-    </select>
-    <button id="newLineButton">New Line</button>
-    <button id="deleteLineButton">Delete Line</button>
-  </div>
-  <div id="counter">Arrived: 0</div>
-  <div id="trainPopup"></div>
-  <p style="margin:10px;">
-    <strong>How to use:</strong><br>
-    • Draw/modify metro lines as before (with draggable endpoint tabs).<br>
-    • Stations are created manually by double‑clicking an intersection and removed via right‑click.<br>
-    • Commuters spawn at random intersections and recalc their fastest route (mixing walking and metro) whenever the metro changes.<br>
-    • Each commuter’s state (walking, waitingForTrain, riding, or transferring) is shown when highlighted (hovered or pinned).<br>
-    • When a train completes its move, it checks onboard commuters; if a commuter’s target stop matches the arrival station, they disembark (removing the metro edges they’ve just ridden). If more metro edges remain, they enter a transferring state (with a fixed delay) before boarding the next train.<br>
-    • Enjoy the multi‑modal simulation!
-  </p>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
-  
-  <!-- Load the main JS module that bootstraps your app -->
-  <script type="module" src="src/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Metro System Designer & Simulator – Multi‑Modal</title>
+    <!-- Link to your external CSS file if you want to separate styling -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="controls">
+      <label for="lineColorDropdown">Line Color:</label>
+      <select id="lineColorDropdown">
+        <option value="#ff0000" selected>Red</option>
+        <option value="#0000ff">Blue</option>
+        <option value="#00ff00">Green</option>
+        <option value="#ffff00">Yellow</option>
+        <option value="#800080">Purple</option>
+        <option value="#ffa500">Orange</option>
+        <option value="#00ffff">Cyan</option>
+        <option value="#ff00ff">Magenta</option>
+        <option value="#8b4513">Brown</option>
+        <option value="#000000">Black</option>
+      </select>
+      <button id="newLineButton">New Line</button>
+      <button id="deleteLineButton">Delete Line</button>
+    </div>
+    <div id="counter">Arrived: 0</div>
+    <div id="trainPopup"></div>
+    <p style="margin: 10px">
+      <strong>How to use:</strong><br />
+      • Draw/modify metro lines as before (with draggable endpoint tabs).<br />
+      • Stations are created manually by double‑clicking an intersection and
+      removed via right‑click.<br />
+      • Commuters spawn at random intersections and recalc their fastest route
+      (mixing walking and metro) whenever the metro changes.<br />
+      • Each commuter’s state (walking, waitingForTrain, riding, or
+      transferring) is shown when highlighted (hovered or pinned).<br />
+      • When a train completes its move, it checks onboard commuters; if a
+      commuter’s target stop matches the arrival station, they disembark
+      (removing the metro edges they’ve just ridden). If more metro edges
+      remain, they enter a transferring state (with a fixed delay) before
+      boarding the next train.<br />
+      • Enjoy the multi‑modal simulation!
+    </p>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <!-- Load the main JS module that bootstraps your app -->
+    <script type="module" src="src/main.js"></script>
+  </body>
 </html>

@@ -1,7 +1,7 @@
 // globals.js
-export let stations = [];  // { id, x, y, col, row }
+export let stations = []; // { id, x, y, col, row }
 export let metroLines = []; // { id, color, stations: [...], trains: [], isLoop }
-export let commuters = [];  // Commuters and their routing state
+export let commuters = []; // Commuters and their routing state
 
 // For ID generation:
 export let nextLineId = 1;

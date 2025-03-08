@@ -3,7 +3,7 @@ import { computeTabPosition, distance } from "./utils.js";
 import { stationRadius, tabRadius, tabMargin } from "./constants.js";
 
 export function drawStations(ctx, stations) {
-  stations.forEach(s => {
+  stations.forEach((s) => {
     ctx.beginPath();
     ctx.arc(s.x, s.y, stationRadius, 0, 2 * Math.PI);
     ctx.fillStyle = "#FFF";
@@ -19,43 +19,54 @@ export function drawStations(ctx, stations) {
 }
 
 export function getSegmentOffset(line, segmentIndex, metroLines) {
-  let a = line.stations[segmentIndex], b = line.stations[segmentIndex+1];
-  let sameSegmentLines = metroLines.filter(l => {
+  let a = line.stations[segmentIndex],
+    b = line.stations[segmentIndex + 1];
+  let sameSegmentLines = metroLines.filter((l) => {
     for (let i = 0; i < l.stations.length - 1; i++) {
-      let p = l.stations[i], q = l.stations[i+1];
-      if ((p.id === a.id && q.id === b.id) || (p.id === b.id && q.id === a.id)) return true;
+      let p = l.stations[i],
+        q = l.stations[i + 1];
+      if ((p.id === a.id && q.id === b.id) || (p.id === b.id && q.id === a.id))
+        return true;
     }
     return false;
   });
   sameSegmentLines.sort((l1, l2) => l1.id - l2.id);
-  let idx = sameSegmentLines.findIndex(l => l.id === line.id);
+  let idx = sameSegmentLines.findIndex((l) => l.id === line.id);
   let count = sameSegmentLines.length;
   let offsetDistance = 10;
-  let offset = (count % 2 === 1)
-    ? (idx - Math.floor(count / 2)) * offsetDistance
-    : (idx - count / 2 + 0.5) * offsetDistance;
+  let offset =
+    count % 2 === 1
+      ? (idx - Math.floor(count / 2)) * offsetDistance
+      : (idx - count / 2 + 0.5) * offsetDistance;
   return offset;
 }
 
 export function drawMetroLines(ctx, metroLines) {
-  metroLines.forEach(line => {
+  metroLines.forEach((line) => {
     ctx.beginPath();
     ctx.lineWidth = 4;
     ctx.strokeStyle = line.color;
     for (let i = 0; i < line.stations.length - 1; i++) {
-      let s1 = line.stations[i], s2 = line.stations[i+1];
+      let s1 = line.stations[i],
+        s2 = line.stations[i + 1];
       let offset = getSegmentOffset(line, i, metroLines);
-      let dx = s2.x - s1.x, dy = s2.y - s1.y;
+      let dx = s2.x - s1.x,
+        dy = s2.y - s1.y;
       let len = Math.sqrt(dx * dx + dy * dy);
-      let offX = -dy / len * offset;
-      let offY = dx / len * offset;
+      let offX = (-dy / len) * offset;
+      let offY = (dx / len) * offset;
       ctx.moveTo(s1.x + offX, s1.y + offY);
       ctx.lineTo(s2.x + offX, s2.y + offY);
     }
     ctx.stroke();
     ctx.lineWidth = 2;
     if (!line.isLoop && line.stations.length >= 2) {
-      let startTab = computeTabPosition(line, "start", stationRadius, tabMargin);
+      let startTab = computeTabPosition(
+        line,
+        "start",
+        stationRadius,
+        tabMargin
+      );
       let endTab = computeTabPosition(line, "end", stationRadius, tabMargin);
       ctx.save();
       ctx.fillStyle = line.color;
@@ -107,7 +118,10 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
       ctx.stroke();
       ctx.lineWidth = 2;
     } else if (activeLine.editingMode === "extend") {
-      let endpoint = activeLine.extendEnd === "end" ? activeLine.stations[activeLine.stations.length - 1] : activeLine.stations[0];
+      let endpoint =
+        activeLine.extendEnd === "end"
+          ? activeLine.stations[activeLine.stations.length - 1]
+          : activeLine.stations[0];
       ctx.save();
       ctx.strokeStyle = activeLine.color;
       ctx.lineWidth = 4;
@@ -123,8 +137,8 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
 }
 
 export function drawTrains(ctx, metroLines) {
-  metroLines.forEach(line => {
-    line.trains.forEach(train => {
+  metroLines.forEach((line) => {
+    line.trains.forEach((train) => {
       ctx.beginPath();
       ctx.arc(train.position.x, train.position.y, 15, 0, 2 * Math.PI);
       ctx.fillStyle = line.color;
@@ -144,33 +158,37 @@ function printRoute(commuter) {
     let start = currentEdge.from;
     let end = currentEdge.to;
     if (mode === "walk") {
-      segments.push(`${prefix} walk from ${start.col},${start.row} to ${end.col},${end.row}`);
+      segments.push(
+        `${prefix} walk from ${start.col},${start.row} to ${end.col},${end.row}`
+      );
     } else if (mode === "metro") {
       let lineColor = currentEdge.line ? currentEdge.line.color : "";
-      segments.push(`${prefix} train on ${lineColor} line from ${start.id} to ${end.id}`);
+      segments.push(
+        `${prefix} train on ${lineColor} line from ${start.id} to ${end.id}`
+      );
     }
   }
   return segments;
 }
 
 export function drawCommuters(ctx, commuters, pinnedCommuter) {
-  commuters.forEach(commuter => {
-    let isHighlighted = (pinnedCommuter && commuter === pinnedCommuter);
-    
+  commuters.forEach((commuter) => {
+    let isHighlighted = pinnedCommuter && commuter === pinnedCommuter;
+
     // Draw commuter as a blue circle.
     ctx.beginPath();
     ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
     ctx.fillStyle = "blue";
     ctx.fill();
-    
+
     if (isHighlighted) {
       // Draw the commuter's route as a dotted, translucent red line.
       if (commuter.route && commuter.route.length > 0) {
         ctx.save();
-        ctx.globalAlpha = 0.5;       // Set transparency
+        ctx.globalAlpha = 0.5; // Set transparency
         ctx.strokeStyle = "red";
         ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);     // Dotted line pattern
+        ctx.setLineDash([5, 5]); // Dotted line pattern
         ctx.beginPath();
         // Start at the commuter's current position.
         ctx.moveTo(commuter.position.x, commuter.position.y);
@@ -182,29 +200,42 @@ export function drawCommuters(ctx, commuters, pinnedCommuter) {
         ctx.stroke();
         ctx.restore();
       }
-      
+
       // Draw highlighting text.
       ctx.fillStyle = "black";
       ctx.font = "bold 10px Arial";
-      ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y + 15);
-      
+      ctx.fillText(
+        "State: " + commuter.state,
+        commuter.position.x,
+        commuter.position.y + 15
+      );
+
       ctx.fillStyle = "red";
       ctx.font = "bold 12px Arial";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText("→ " + commuter.position.x.toFixed(3) + "," + commuter.position.y.toFixed(3), commuter.position.x + 8, commuter.position.y);
-      
+      ctx.fillText(
+        "→ " +
+          commuter.position.x.toFixed(3) +
+          "," +
+          commuter.position.y.toFixed(3),
+        commuter.position.x + 8,
+        commuter.position.y
+      );
+
       ctx.fillStyle = "black";
       ctx.font = "bold 10px Arial";
       let routePlan = printRoute(commuter);
       for (let i = 0; i < routePlan.length; i++) {
-        ctx.fillText(routePlan[i], commuter.position.x + 8, commuter.position.y - (15 * routePlan.length) + 15 * i);
+        ctx.fillText(
+          routePlan[i],
+          commuter.position.x + 8,
+          commuter.position.y - 15 * routePlan.length + 15 * i
+        );
       }
     }
   });
 }
-
-
 
 export function drawArrivalEffects(ctx, arrivalEffects, now) {
   for (let i = arrivalEffects.length - 1; i >= 0; i--) {
@@ -233,7 +264,18 @@ export function drawBackground(ctx, bgCanvas) {
   ctx.drawImage(bgCanvas, 0, 0);
 }
 
-export function draw(ctx, bgCanvas, metroLines, activeLine, currentMousePos, stations, commuters, pinnedCommuter, arrivalEffects, now) {
+export function draw(
+  ctx,
+  bgCanvas,
+  metroLines,
+  activeLine,
+  currentMousePos,
+  stations,
+  commuters,
+  pinnedCommuter,
+  arrivalEffects,
+  now
+) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   drawBackground(ctx, bgCanvas);
   drawMetroLines(ctx, metroLines);

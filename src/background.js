@@ -1,5 +1,10 @@
 // background.js
-import { gridSpacingX, gridSpacingY, canvasWidth, canvasHeight } from "./constants.js";
+import {
+  gridSpacingX,
+  gridSpacingY,
+  canvasWidth,
+  canvasHeight,
+} from "./constants.js";
 
 // Helper: checks if two rectangles overlap considering a minimum gap.
 function rectanglesOverlapWithMargin(r1, r2, margin) {
@@ -19,8 +24,8 @@ export function createBackground(bgCanvas) {
   bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
   // Define margins.
-  const cellMargin = 5;      // Margin between the buildings area and the cell edges (i.e. street margin)
-  const buildingMargin = 2;  // Minimum gap between individual buildings
+  const cellMargin = 5; // Margin between the buildings area and the cell edges (i.e. street margin)
+  const buildingMargin = 2; // Minimum gap between individual buildings
 
   // Available drawing area within each cell.
   const availWidth = gridSpacingX - 2 * cellMargin;
@@ -30,10 +35,10 @@ export function createBackground(bgCanvas) {
   const targetFill = targetFillRatio * cellArea;
 
   // Building size constraints (as a percentage of the available cell dimensions).
-  const minWidthPercent = 0.05;   // 5% of availWidth
-  const maxWidthPercent = 0.25;   // 25% of availWidth
-  const minHeightPercent = 0.2;   // 20% of availHeight
-  const maxHeightPercent = 0.75;   // up to 80% of availHeight; if above, force full height.
+  const minWidthPercent = 0.05; // 5% of availWidth
+  const maxWidthPercent = 0.25; // 25% of availWidth
+  const minHeightPercent = 0.2; // 20% of availHeight
+  const maxHeightPercent = 0.75; // up to 80% of availHeight; if above, force full height.
   const fullHeightForceThreshold = 0.7;
 
   const cols = Math.floor(canvasWidth / gridSpacingX);
@@ -57,13 +62,17 @@ export function createBackground(bgCanvas) {
         // Randomly choose building width.
         const minBuildingWidth = availWidth * minWidthPercent;
         const maxBuildingWidth = availWidth * maxWidthPercent;
-        let buildingWidth = minBuildingWidth + Math.random() * (maxBuildingWidth - minBuildingWidth);
+        let buildingWidth =
+          minBuildingWidth +
+          Math.random() * (maxBuildingWidth - minBuildingWidth);
         buildingWidth = Math.min(buildingWidth, availWidth);
 
         // Randomly choose building height.
         const minBuildingHeight = availHeight * minHeightPercent;
         const maxBuildingHeight = availHeight * maxHeightPercent;
-        let buildingHeight = minBuildingHeight + Math.random() * (maxBuildingHeight - minBuildingHeight);
+        let buildingHeight =
+          minBuildingHeight +
+          Math.random() * (maxBuildingHeight - minBuildingHeight);
         // If the height exceeds 80% of the available height, force full available height.
         if (buildingHeight > availHeight * fullHeightForceThreshold) {
           buildingHeight = availHeight;
@@ -73,7 +82,7 @@ export function createBackground(bgCanvas) {
         // Randomly choose an edge: 0 = left, 1 = top, 2 = right, 3 = bottom.
         const edge = Math.floor(Math.random() * 4);
         let posX, posY;
-        if (edge === 0) { 
+        if (edge === 0) {
           // Anchored to left.
           posX = availX;
           posY = availY + Math.random() * (availHeight - buildingHeight);
@@ -99,7 +108,9 @@ export function createBackground(bgCanvas) {
         };
 
         // Check overlap with existing buildings using the building margin.
-        const overlaps = placedBuildings.some(b => rectanglesOverlapWithMargin(b, newBuilding, buildingMargin));
+        const overlaps = placedBuildings.some((b) =>
+          rectanglesOverlapWithMargin(b, newBuilding, buildingMargin)
+        );
         if (!overlaps) {
           placedBuildings.push(newBuilding);
           filledArea += buildingWidth * buildingHeight;
@@ -107,7 +118,7 @@ export function createBackground(bgCanvas) {
       } // end while for cell
 
       // Draw the buildings in the cell.
-      placedBuildings.forEach(b => {
+      placedBuildings.forEach((b) => {
         const gray = Math.floor(150 + Math.random() * 100);
         bgCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
         bgCtx.fillRect(b.x, b.y, b.width, b.height);

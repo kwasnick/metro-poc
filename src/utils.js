@@ -45,28 +45,40 @@ export function darkenColor(hex, factor) {
   r = Math.floor(r * factor);
   g = Math.floor(g * factor);
   b = Math.floor(b * factor);
-  return "#" + ("0" + r.toString(16)).slice(-2) +
-               ("0" + g.toString(16)).slice(-2) +
-               ("0" + b.toString(16)).slice(-2);
+  return (
+    "#" +
+    ("0" + r.toString(16)).slice(-2) +
+    ("0" + g.toString(16)).slice(-2) +
+    ("0" + b.toString(16)).slice(-2)
+  );
 }
 
-export function computeTabPosition(line, endpointType, stationRadius, tabMargin) {
+export function computeTabPosition(
+  line,
+  endpointType,
+  stationRadius,
+  tabMargin
+) {
   let tab = { x: 0, y: 0 };
   if (line.stations.length < 2) return tab;
   if (endpointType === "end") {
     let last = line.stations[line.stations.length - 1];
     let prev = line.stations[line.stations.length - 2];
-    let dx = last.x - prev.x, dy = last.y - prev.y;
+    let dx = last.x - prev.x,
+      dy = last.y - prev.y;
     let len = Math.sqrt(dx * dx + dy * dy);
-    let dirX = dx / len, dirY = dy / len;
+    let dirX = dx / len,
+      dirY = dy / len;
     tab.x = last.x + dirX * (stationRadius + tabMargin);
     tab.y = last.y + dirY * (stationRadius + tabMargin);
   } else if (endpointType === "start") {
     let first = line.stations[0];
     let next = line.stations[1];
-    let dx = first.x - next.x, dy = first.y - next.y;
+    let dx = first.x - next.x,
+      dy = first.y - next.y;
     let len = Math.sqrt(dx * dx + dy * dy);
-    let dirX = dx / len, dirY = dy / len;
+    let dirX = dx / len,
+      dirY = dy / len;
     tab.x = first.x + dirX * (stationRadius + tabMargin);
     tab.y = first.y + dirY * (stationRadius + tabMargin);
   }
