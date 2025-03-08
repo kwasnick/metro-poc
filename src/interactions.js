@@ -108,7 +108,7 @@ export function setupInteractions(
         return;
       }
 
-      // (B) Check if clicking on an existing station for removal.
+      // (B) Check if clicking on an existing station for removal or (now) line creation.
       let clickedStation = getStationAt(x, y, stations);
       if (clickedStation) {
         // Start a removal hold timer and animation.
@@ -234,7 +234,8 @@ export function setupInteractions(
       }
     }
 
-    // Cancel station removal hold if moved too far from the original station.
+    // NEW: If dragging from a clicked station (set for removal) beyond the threshold,
+    // cancel the removal hold and start new line creation mode.
     if (state.stationRemovalAnimation) {
       const origin = state.stationRemovalAnimation.station;
       if (
@@ -244,6 +245,14 @@ export function setupInteractions(
         clearTimeout(stationRemovalHoldTimer);
         stationRemovalHoldTimer = null;
         state.stationRemovalAnimation = null;
+        // Enter new line creation mode using the clicked station.
+        state.activeLine = {
+          id: state.nextLineId++,
+          color: lineColorDropdown.value,
+          stations: [origin],
+          trains: [],
+          editingMode: "new",
+        };
       }
     }
 
@@ -426,8 +435,6 @@ export function setupInteractions(
       }
     }
   });
-
-  // Remove dblclick and contextmenu listeners; station and line actions are now managed via hold and mouseup.
 
   canvas.addEventListener("click", (e) => {
     // Existing commuter pinning functionality.
