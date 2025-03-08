@@ -1,0 +1,45 @@
+/* style.css */
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: Arial, sans-serif;
+  }
+  
+  #controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 10px;
+  }
+  
+  #controls label,
+  #controls select,
+  #controls button {
+    font-size: 16px;
+    margin: 5px 0;
+  }
+  
+  #counter {
+    font-size: 18px;
+    margin: 5px;
+  }
+  
+  canvas {
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    border: 1px solid #ccc;
+  }
+  
+  /* Optional: Force vertical layout for portrait orientation */
+  @media (orientation: portrait) {
+    #controls {
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+  }
+  

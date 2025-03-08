@@ -455,4 +455,38 @@ export function setupInteractions(
       state.pinnedCommuter = null;
     }
   });
+
+  // Add touch event listeners for mobile devices.
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    let touch = e.touches[0];
+    let simulatedEvent = new MouseEvent("mousedown", {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      bubbles: true,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(simulatedEvent);
+  });
+
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    let touch = e.touches[0];
+    let simulatedEvent = new MouseEvent("mousemove", {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      bubbles: true,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(simulatedEvent);
+  });
+
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    let simulatedEvent = new MouseEvent("mouseup", {
+      bubbles: true,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(simulatedEvent);
+  });
 }
