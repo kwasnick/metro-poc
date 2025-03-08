@@ -64,23 +64,67 @@ export function drawMetroLines(ctx, metroLines) {
       ctx.lineTo(s2.x + offX, s2.y + offY);
     }
     ctx.stroke();
-    ctx.lineWidth = 2;
+
+    // Only add tabs if the line is not a loop and has at least two stations.
     if (!line.isLoop && line.stations.length >= 2) {
-      let startTab = computeTabPosition(
-        line,
-        "start",
-        stationRadius,
-        tabMargin
-      );
-      let endTab = computeTabPosition(line, "end", stationRadius, tabMargin);
+      // Length of the tab line sticking out
+      const tabLineLength = 10; // adjust as needed
+
       ctx.save();
-      ctx.fillStyle = line.color;
+      ctx.strokeStyle = line.color;
+      ctx.lineWidth = 4;
+
+      // --- Draw the start tab ---
+      // Use the first segment's direction (from first to second station)
+      let firstStation = line.stations[0];
+      let secondStation = line.stations[1];
+      let dx = secondStation.x - firstStation.x;
+      let dy = secondStation.y - firstStation.y;
+      let len = Math.sqrt(dx * dx + dy * dy);
+      let normX = dx / len;
+      let normY = dy / len;
+      // Compute the base point on the station's circumference,
+      // sticking out in the opposite direction of the first segment.
+      let startBase = {
+        x: firstStation.x - normX * stationRadius,
+        y: firstStation.y - normY * stationRadius,
+      };
+      let startTabEnd = {
+        x: startBase.x - normX * tabLineLength,
+        y: startBase.y - normY * tabLineLength,
+      };
+
       ctx.beginPath();
-      ctx.arc(startTab.x, startTab.y, tabRadius, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx.moveTo(startBase.x, startBase.y);
+      ctx.lineTo(startTabEnd.x, startTabEnd.y);
+      ctx.stroke();
+
+      // --- Draw the end tab ---
+      // Use the last segment's direction (from second-last to last station)
+      let lastIndex = line.stations.length - 1;
+      let lastStation = line.stations[lastIndex];
+      let secondLastStation = line.stations[lastIndex - 1];
+      dx = lastStation.x - secondLastStation.x;
+      dy = lastStation.y - secondLastStation.y;
+      len = Math.sqrt(dx * dx + dy * dy);
+      normX = dx / len;
+      normY = dy / len;
+      // Compute the base point on the station's circumference,
+      // sticking out in the same direction as the last segment.
+      let endBase = {
+        x: lastStation.x + normX * stationRadius,
+        y: lastStation.y + normY * stationRadius,
+      };
+      let endTabEnd = {
+        x: endBase.x + normX * tabLineLength,
+        y: endBase.y + normY * tabLineLength,
+      };
+
       ctx.beginPath();
-      ctx.arc(endTab.x, endTab.y, tabRadius, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx.moveTo(endBase.x, endBase.y);
+      ctx.lineTo(endTabEnd.x, endTabEnd.y);
+      ctx.stroke();
+
       ctx.restore();
     }
   });
