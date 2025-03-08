@@ -4,7 +4,6 @@ import { acceleration, maxSpeed, dwellTime } from "./constants.js";
 import { computeTravelTime } from "./utils.js";
 
 export function spawnDefaultTrains(line) {
-  console.log("spawning default trains");
   line.trains = [];
   let now = performance.now();
   if (!line.isLoop) {

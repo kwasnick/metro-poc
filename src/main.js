@@ -8,6 +8,7 @@ import { spawnCommuter, updateCommuters } from "./commuters.js";
 import { updateTrains } from "./trains.js";
 import { draw } from "./drawing.js";
 import { setupInteractions } from "./interactions.js";
+import { recalculateRoutes } from "./commuters.js";
 
 // Initialize canvas
 const canvas = document.getElementById("gameCanvas");
@@ -54,13 +55,10 @@ for (let col = 0; col < canvasCols; col++) {
   }
 }
 
-// Dummy recalc function – implement as needed.
-function recalcCommuterRoutes() {
-  // Recalculate routes for all commuters based on the current grid and metro configuration.
-}
+
 
 // Setup mouse and UI interactions:
-setupInteractions(canvas, uiElements, state, gridNodes, stations, metroLines, commuters, recalcCommuterRoutes);
+setupInteractions(canvas, uiElements, state, gridNodes, stations, metroLines, commuters, recalculateRoutes);
 
 // Main update loop
 function update(now) {

@@ -156,19 +156,44 @@ function printRoute(commuter) {
 export function drawCommuters(ctx, commuters, pinnedCommuter) {
   commuters.forEach(commuter => {
     let isHighlighted = (pinnedCommuter && commuter === pinnedCommuter);
+    
+    // Draw commuter as a blue circle.
     ctx.beginPath();
     ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
     ctx.fillStyle = "blue";
     ctx.fill();
+    
     if (isHighlighted) {
+      // Draw the commuter's route as a dotted, translucent red line.
+      if (commuter.route && commuter.route.length > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.5;       // Set transparency
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);     // Dotted line pattern
+        ctx.beginPath();
+        // Start at the commuter's current position.
+        ctx.moveTo(commuter.position.x, commuter.position.y);
+        let startIndex = commuter.currentEdgeIndex || 0;
+        for (let i = startIndex; i < commuter.route.length; i++) {
+          let edge = commuter.route[i];
+          ctx.lineTo(edge.to.x, edge.to.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+      
+      // Draw highlighting text.
       ctx.fillStyle = "black";
       ctx.font = "bold 10px Arial";
       ctx.fillText("State: " + commuter.state, commuter.position.x, commuter.position.y + 15);
+      
       ctx.fillStyle = "red";
       ctx.font = "bold 12px Arial";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText("→ " + commuter.position.x.toFixed(3) + "," + commuter.position.y.toFixed(3), commuter.position.x + 8, commuter.position.y);
+      
       ctx.fillStyle = "black";
       ctx.font = "bold 10px Arial";
       let routePlan = printRoute(commuter);
@@ -178,6 +203,8 @@ export function drawCommuters(ctx, commuters, pinnedCommuter) {
     }
   });
 }
+
+
 
 export function drawArrivalEffects(ctx, arrivalEffects, now) {
   for (let i = arrivalEffects.length - 1; i >= 0; i--) {

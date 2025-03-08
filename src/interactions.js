@@ -3,9 +3,17 @@ import { getStationAt, getSnappedStation, distance, distanceToSegment, computeTa
 import { stationRadius, snapThreshold, tabRadius, tabMargin } from "./constants.js";
 import { spawnDefaultTrains } from "./trains.js";
 
-export function setupInteractions(canvas, uiElements, state, gridNodes, stations, metroLines, commuters, recalcCommuterRoutesCallback) {
+export function setupInteractions(canvas, uiElements, state, gridNodes, stations, metroLines, commuters, recalcCommuterRoutesFunc) {
   const { lineColorDropdown, newLineButton, deleteLineButton } = uiElements;
-  
+
+  function recalcCommuterRoutesCallback() {
+    recalcCommuterRoutesFunc(
+      commuters,
+      gridNodes,
+      metroLines,
+    );
+  }
+
   // Toggle new line mode:
   newLineButton.addEventListener('click', () => {
     if (state.activeLine && state.activeLine.editingMode === "new") {
