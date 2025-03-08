@@ -53,6 +53,8 @@ const state = {
   nextTrainId: 1,
   pinnedCommuter: null,
   currentMousePos: { x: 0, y: 0 },
+  stationCreationAnimation: null,
+  stationRemovalAnimation: null,
 };
 
 // Create grid nodes for path planning:
@@ -72,16 +74,7 @@ for (let col = 0; col < canvasCols; col++) {
 }
 
 // Setup mouse and UI interactions:
-setupInteractions(
-  canvas,
-  uiElements,
-  state,
-  gridNodes,
-  stations,
-  metroLines,
-  commuters,
-  recalculateRoutes
-);
+setupInteractions(canvas, uiElements, state, gridNodes, recalculateRoutes);
 
 // Main update loop
 function update(now) {
@@ -97,7 +90,8 @@ function update(now) {
     commuters,
     state.pinnedCommuter,
     arrivalEffects,
-    now
+    now,
+    state
   );
   counterDiv.textContent = "Arrived: " + arrivedCount;
   requestAnimationFrame(update);

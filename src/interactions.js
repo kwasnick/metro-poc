@@ -7,21 +7,20 @@ import {
   computeTabPosition,
 } from "./utils.js";
 import {
+  holdThreshold,
   stationRadius,
   snapThreshold,
   tabRadius,
   tabMargin,
 } from "./constants.js";
 import { spawnDefaultTrains } from "./trains.js";
+import { stations, metroLines, commuters } from "./globals.js";
 
 export function setupInteractions(
   canvas,
   uiElements,
   state,
   gridNodes,
-  stations,
-  metroLines,
-  commuters,
   recalcCommuterRoutesFunc
 ) {
   const { lineColorDropdown, newLineButton, deleteLineButton } = uiElements;
@@ -33,7 +32,6 @@ export function setupInteractions(
   // ---- New Hold Parameters ----
   let stationCreationHoldTimer = null;
   let stationRemovalHoldTimer = null;
-  const holdThreshold = 1000; // milliseconds required for hold actions
 
   // Animation states for station creation/removal.
   state.stationCreationAnimation = null; // { node, startTime, progress }
@@ -111,7 +109,10 @@ export function setupInteractions(
         // Start a removal hold timer and animation.
         stationRemovalHoldTimer = setTimeout(() => {
           // Remove the station after a long enough hold.
-          stations = stations.filter((s) => s !== clickedStation);
+          stations.splice(
+            stations.findIndex((s) => s === clickedStation),
+            1
+          );
           metroLines.forEach((line) => {
             line.stations = line.stations.filter(
               (s) => s.id !== clickedStation.id
@@ -159,6 +160,7 @@ export function setupInteractions(
           }
           state.stationCreationAnimation = null;
         }, holdThreshold);
+
         state.stationCreationAnimation = {
           node: closest,
           startTime: Date.now(),
@@ -265,23 +267,24 @@ export function setupInteractions(
     }
 
     // ---- Update hold animation progress for station creation & removal ----
-    const now = Date.now();
-    if (state.stationCreationAnimation) {
-      const elapsed = now - state.stationCreationAnimation.startTime;
-      state.stationCreationAnimation.progress = Math.min(
-        elapsed / holdThreshold,
-        1
-      );
-      // Your render loop can use this progress (e.g. scaling the station circle)
-    }
-    if (state.stationRemovalAnimation) {
-      const elapsed = now - state.stationRemovalAnimation.startTime;
-      state.stationRemovalAnimation.progress = Math.min(
-        elapsed / holdThreshold,
-        1
-      );
-      // Use this progress to increase shaking amplitude, etc.
-    }
+    // TODO I don't think we need this
+    // const now = Date.now();
+    // if (state.stationCreationAnimation) {
+    //   const elapsed = now - state.stationCreationAnimation.startTime;
+    //   state.stationCreationAnimation.progress = Math.min(
+    //     elapsed / holdThreshold,
+    //     1
+    //   );
+    //   // Your render loop can use this progress (e.g. scaling the station circle)
+    // }
+    // if (state.stationRemovalAnimation) {
+    //   const elapsed = now - state.stationRemovalAnimation.startTime;
+    //   state.stationRemovalAnimation.progress = Math.min(
+    //     elapsed / holdThreshold,
+    //     1
+    //   );
+    //   // Use this progress to increase shaking amplitude, etc.
+    // }
   });
 
   canvas.addEventListener("mouseup", (e) => {

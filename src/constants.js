@@ -25,3 +25,6 @@ export const walkingSpeed = 0.05; // px/frame
 export const maxStationCount = 26;
 export const metroWaitTime = dwellTime / 2;
 export const transferTime = 3000;
+
+// Creation / deletion
+export const holdThreshold = 1000; // milliseconds required for hold actions

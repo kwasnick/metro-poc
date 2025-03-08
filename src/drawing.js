@@ -1,6 +1,11 @@
 // drawing.js
 import { computeTabPosition, distance } from "./utils.js";
-import { stationRadius, tabRadius, tabMargin } from "./constants.js";
+import {
+  stationRadius,
+  tabRadius,
+  tabMargin,
+  holdThreshold,
+} from "./constants.js";
 
 export function drawStations(ctx, stations) {
   stations.forEach((s) => {
@@ -264,6 +269,51 @@ export function drawBackground(ctx, bgCanvas) {
   ctx.drawImage(bgCanvas, 0, 0);
 }
 
+/**
+ * Draw animations for station creation and removal.
+ * - For station creation, a growing circle is drawn over the grid node.
+ * - For station removal, the station is drawn with a shaking effect.
+ */
+export function drawStationAnimations(ctx, state, now) {
+  // Animate station creation hold (growing circle)
+  if (state.stationCreationAnimation) {
+    // calculate progress using the duration
+    const progress =
+      (Date.now() - state.stationCreationAnimation.startTime) / holdThreshold;
+    const node = state.stationCreationAnimation.node;
+    // Grow the circle from 0 up to stationRadius.
+    const animatedRadius = stationRadius * progress;
+    ctx.save();
+    ctx.globalAlpha = progress; // Fade in effect
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, animatedRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(0, 200, 0, 0.5)"; // green tint for creation
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Animate station removal hold (shaking effect)
+  if (state.stationRemovalAnimation) {
+    // calculate progress using the duration
+    const progress =
+      (Date.now() - state.stationRemovalAnimation.startTime) / holdThreshold;
+    const station = state.stationRemovalAnimation.station;
+    // Shake amplitude increases with progress.
+    const shakeAmplitude = 5 * progress;
+    const offsetX = Math.sin(now / 20) * shakeAmplitude;
+    const offsetY = Math.cos(now / 20) * shakeAmplitude;
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.beginPath();
+    ctx.arc(station.x, station.y, stationRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(255, 0, 0, 0.5)"; // red tint for removal
+    ctx.fill();
+    ctx.strokeStyle = "red";
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 export function draw(
   ctx,
   bgCanvas,
@@ -274,7 +324,8 @@ export function draw(
   commuters,
   pinnedCommuter,
   arrivalEffects,
-  now
+  now,
+  state
 ) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   drawBackground(ctx, bgCanvas);
@@ -284,4 +335,5 @@ export function draw(
   drawTrains(ctx, metroLines);
   drawCommuters(ctx, commuters, pinnedCommuter);
   drawArrivalEffects(ctx, arrivalEffects, now);
+  drawStationAnimations(ctx, state, now);
 }
