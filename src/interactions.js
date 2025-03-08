@@ -30,6 +30,15 @@ export function setupInteractions(
     recalcCommuterRoutesFunc(commuters, gridNodes, metroLines);
   }
 
+  // ---- New Hold Parameters ----
+  let stationCreationHoldTimer = null;
+  let stationRemovalHoldTimer = null;
+  const holdThreshold = 1000; // milliseconds required for hold actions
+
+  // Animation states for station creation/removal.
+  state.stationCreationAnimation = null; // { node, startTime, progress }
+  state.stationRemovalAnimation = null; // { station, startTime, progress }
+
   // Toggle new line mode:
   newLineButton.addEventListener("click", () => {
     if (state.activeLine && state.activeLine.editingMode === "new") {
@@ -59,7 +68,12 @@ export function setupInteractions(
     const rect = canvas.getBoundingClientRect();
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
+    currentMousePos = { x, y };
+    state.currentMousePos = currentMousePos;
+
+    // ---- If no metro line is active, check for station creation/removal via hold ----
     if (!state.activeLine) {
+      // (A) Prioritize metro line tab interactions:
       let clickedTab = null;
       let extendEnd = null;
       for (let line of metroLines) {
@@ -90,8 +104,74 @@ export function setupInteractions(
         isDragging = true;
         return;
       }
+
+      // (B) Check if clicking on an existing station for removal.
+      let clickedStation = getStationAt(x, y, stations);
+      if (clickedStation) {
+        // Start a removal hold timer and animation.
+        stationRemovalHoldTimer = setTimeout(() => {
+          // Remove the station after a long enough hold.
+          stations = stations.filter((s) => s !== clickedStation);
+          metroLines.forEach((line) => {
+            line.stations = line.stations.filter(
+              (s) => s.id !== clickedStation.id
+            );
+          });
+          recalcCommuterRoutesCallback();
+          state.stationRemovalAnimation = null;
+        }, holdThreshold);
+        state.stationRemovalAnimation = {
+          station: clickedStation,
+          startTime: Date.now(),
+          progress: 0,
+        };
+        isDragging = true;
+        return;
+      }
+
+      // (C) Otherwise, if near a grid node, start a station creation hold.
+      let closest = null,
+        bestDist = Infinity;
+      for (let key in gridNodes) {
+        let node = gridNodes[key];
+        let d = distance(x, y, node.x, node.y);
+        if (d < bestDist) {
+          bestDist = d;
+          closest = node;
+        }
+      }
+      if (closest && bestDist < snapThreshold) {
+        stationCreationHoldTimer = setTimeout(() => {
+          // Create the station once the hold threshold is met.
+          let exists = stations.find(
+            (s) => s.col === closest.col && s.row === closest.row
+          );
+          if (!exists) {
+            let newStation = {
+              id: String.fromCharCode(65 + stations.length),
+              x: closest.x,
+              y: closest.y,
+              col: closest.col,
+              row: closest.row,
+            };
+            stations.push(newStation);
+            recalcCommuterRoutesCallback();
+          }
+          state.stationCreationAnimation = null;
+        }, holdThreshold);
+        state.stationCreationAnimation = {
+          node: closest,
+          startTime: Date.now(),
+          progress: 0,
+        };
+        isDragging = true;
+        return;
+      }
     }
+
+    // ---- Existing metro line interactions ----
     if (!state.activeLine) {
+      // Check for metro line segment modification.
       let segInfo = null;
       for (let line of metroLines) {
         for (let i = 0; i < line.stations.length - 1; i++) {
@@ -114,6 +194,7 @@ export function setupInteractions(
         state.activeLine.modifyCandidate = null;
       }
     } else if (state.activeLine.editingMode === "new") {
+      // If starting a new line, add the first station if available.
       if (state.activeLine.stations.length === 0) {
         let s = getStationAt(x, y, stations);
         if (s) state.activeLine.stations.push(s);
@@ -128,6 +209,7 @@ export function setupInteractions(
     currentMousePos.y = e.clientY - rect.top;
     state.currentMousePos = currentMousePos;
 
+    // Update metro line editing interactions.
     if (state.activeLine && isDragging) {
       if (state.activeLine.editingMode === "new") {
         let snapped = getSnappedStation(
@@ -181,10 +263,41 @@ export function setupInteractions(
         }
       }
     }
+
+    // ---- Update hold animation progress for station creation & removal ----
+    const now = Date.now();
+    if (state.stationCreationAnimation) {
+      const elapsed = now - state.stationCreationAnimation.startTime;
+      state.stationCreationAnimation.progress = Math.min(
+        elapsed / holdThreshold,
+        1
+      );
+      // Your render loop can use this progress (e.g. scaling the station circle)
+    }
+    if (state.stationRemovalAnimation) {
+      const elapsed = now - state.stationRemovalAnimation.startTime;
+      state.stationRemovalAnimation.progress = Math.min(
+        elapsed / holdThreshold,
+        1
+      );
+      // Use this progress to increase shaking amplitude, etc.
+    }
   });
 
   canvas.addEventListener("mouseup", (e) => {
     isDragging = false;
+    // Cancel any pending station hold actions if the hold was released early.
+    if (stationCreationHoldTimer) {
+      clearTimeout(stationCreationHoldTimer);
+      stationCreationHoldTimer = null;
+      state.stationCreationAnimation = null;
+    }
+    if (stationRemovalHoldTimer) {
+      clearTimeout(stationRemovalHoldTimer);
+      stationRemovalHoldTimer = null;
+      state.stationRemovalAnimation = null;
+    }
+
     if (state.activeLine) {
       if (state.activeLine.editingMode === "modify") {
         let idx = state.activeLine.modifySegmentIndex;
@@ -273,85 +386,32 @@ export function setupInteractions(
         }
         state.activeLine = null;
         recalcCommuterRoutesCallback();
-      }
-    }
-  });
-
-  canvas.addEventListener("dblclick", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
-    if (state.activeLine && state.activeLine.editingMode === "new") {
-      if (state.activeLine.stations.length >= 2) {
-        if (
-          state.activeLine.stations[0].id ===
-            state.activeLine.stations[state.activeLine.stations.length - 1]
-              .id &&
-          state.activeLine.stations.length >= 3
-        ) {
-          state.activeLine.isLoop = true;
-        } else {
-          state.activeLine.isLoop = false;
-        }
-        metroLines.push(state.activeLine);
-        spawnDefaultTrains(state.activeLine);
-        recalcCommuterRoutesCallback();
-      }
-      state.activeLine = null;
-    } else {
-      let closest = null,
-        bestDist = Infinity;
-      for (let key in gridNodes) {
-        let node = gridNodes[key];
-        let d = distance(x, y, node.x, node.y);
-        if (d < bestDist) {
-          bestDist = d;
-          closest = node;
-        }
-      }
-      if (bestDist < snapThreshold) {
-        let exists = stations.find(
-          (s) => s.col === closest.col && s.row === closest.row
-        );
-        if (!exists) {
-          let newStation = {
-            id: String.fromCharCode(65 + stations.length),
-            x: closest.x,
-            y: closest.y,
-            col: closest.col,
-            row: closest.row,
-          };
-          stations.push(newStation);
+      } else if (state.activeLine.editingMode === "new") {
+        // Finalize the new train line on mouseup.
+        if (state.activeLine.stations.length >= 2) {
+          if (
+            state.activeLine.stations[0].id ===
+              state.activeLine.stations[state.activeLine.stations.length - 1]
+                .id &&
+            state.activeLine.stations.length >= 3
+          ) {
+            state.activeLine.isLoop = true;
+          } else {
+            state.activeLine.isLoop = false;
+          }
+          metroLines.push(state.activeLine);
+          spawnDefaultTrains(state.activeLine);
           recalcCommuterRoutesCallback();
         }
+        state.activeLine = null;
       }
     }
   });
 
-  canvas.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
-    let stationToRemove = null;
-    for (let s of stations) {
-      if (distance(x, y, s.x, s.y) < snapThreshold) {
-        stationToRemove = s;
-        break;
-      }
-    }
-    if (stationToRemove) {
-      stations = stations.filter((s) => s !== stationToRemove);
-      metroLines.forEach((line) => {
-        line.stations = line.stations.filter(
-          (s) => s.id !== stationToRemove.id
-        );
-      });
-      recalcCommuterRoutesCallback();
-    }
-  });
+  // Remove dblclick and contextmenu listeners; station and line actions are now managed via hold and mouseup.
 
   canvas.addEventListener("click", (e) => {
+    // Existing commuter pinning functionality.
     if (state.activeLine) return;
     const rect = canvas.getBoundingClientRect();
     let x = e.clientX - rect.left;
