@@ -35,7 +35,12 @@ export function setupInteractions(
   let stationRemovalHoldTimer = null;
 
   // New constant: if the mouse moves farther than this (in pixels) from the original point, cancel the hold.
-  const holdCancelThreshold = 20;
+  const isTouchDevice =
+    "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  const effectiveHoldThreshold = isTouchDevice
+    ? holdThreshold * 1.2
+    : holdThreshold;
+  const holdCancelThreshold = isTouchDevice ? 25 : 20;
 
   // Animation states for station creation/removal.
   state.stationCreationAnimation = null; // { node, startTime, progress }
@@ -465,6 +470,7 @@ export function setupInteractions(
       clientY: touch.clientY,
       bubbles: true,
       cancelable: true,
+      button: 0,
     });
     canvas.dispatchEvent(simulatedEvent);
   });
@@ -477,16 +483,21 @@ export function setupInteractions(
       clientY: touch.clientY,
       bubbles: true,
       cancelable: true,
+      button: 0,
     });
     canvas.dispatchEvent(simulatedEvent);
   });
 
   canvas.addEventListener("touchend", function (e) {
     e.preventDefault();
-    let simulatedEvent = new MouseEvent("mouseup", {
-      bubbles: true,
-      cancelable: true,
-    });
-    canvas.dispatchEvent(simulatedEvent);
+    // Delay mouseup slightly to give hold timers a chance to fire
+    setTimeout(() => {
+      let simulatedEvent = new MouseEvent("mouseup", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      });
+      canvas.dispatchEvent(simulatedEvent);
+    }, 100);
   });
 }
