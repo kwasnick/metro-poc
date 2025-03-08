@@ -159,24 +159,31 @@ export function updateCommuters(commuters, metroLines, gridNodes, now) {
       if (!edge.line) return;
       let candidate = edge.line.trains.find((train) => {
         if (train.state !== "dwell") return false;
-        let posStation =
-          train.direction === 1
-            ? train.line.stations[train.currentSegment]
-            : train.line.stations[train.currentSegment + 1];
+        let posStation;
+        if (train.direction === 1) {
+          posStation = train.line.stations[train.currentSegment];
+        } else {
+          // For negative-direction trains, use currentSegment+1 if available;
+          // if not, fall back to currentSegment.
+          posStation =
+            train.line.stations[train.currentSegment + 1] ||
+            train.line.stations[train.currentSegment];
+        }
+        if (!posStation) return false;
         if (
           posStation.col === edge.from.col &&
           posStation.row === edge.from.row
         ) {
           if (train.direction === 1) {
+            let nextStation = train.line.stations[train.currentSegment + 1];
+            if (!nextStation) return false;
             return (
-              train.line.stations[train.currentSegment + 1].col ===
-                edge.to.col &&
-              train.line.stations[train.currentSegment + 1].row === edge.to.row
+              nextStation.col === edge.to.col && nextStation.row === edge.to.row
             );
           } else {
+            let prevStation = train.line.stations[train.currentSegment];
             return (
-              train.line.stations[train.currentSegment].col === edge.to.col &&
-              train.line.stations[train.currentSegment].row === edge.to.row
+              prevStation.col === edge.to.col && prevStation.row === edge.to.row
             );
           }
         }

@@ -1,4 +1,3 @@
-// trains.js
 import { distance } from "./utils.js";
 import { acceleration, maxSpeed, dwellTime } from "./constants.js";
 import { computeTravelTime } from "./utils.js";
@@ -7,6 +6,7 @@ export function spawnDefaultTrains(line) {
   line.trains = [];
   let now = performance.now();
   if (!line.isLoop) {
+    // Spawn the positive-direction train at the first station.
     line.trains.push({
       id: Date.now(),
       line: line,
@@ -20,6 +20,7 @@ export function spawnDefaultTrains(line) {
       originalSegment: null,
       position: { x: line.stations[0].x, y: line.stations[0].y },
     });
+    // Spawn the negative-direction train at the last station.
     line.trains.push({
       id: Date.now() + 1,
       line: line,
@@ -32,11 +33,12 @@ export function spawnDefaultTrains(line) {
       onboard: [],
       originalSegment: null,
       position: {
-        x: line.stations[line.stations.length - 2].x,
-        y: line.stations[line.stations.length - 2].y,
+        x: line.stations[line.stations.length - 1].x,
+        y: line.stations[line.stations.length - 1].y,
       },
     });
   } else {
+    // For loop lines both trains start at station 0.
     line.trains.push({
       id: Date.now(),
       line: line,
@@ -70,6 +72,7 @@ function offloadPassengers(train, now) {
   let line = train.line;
   let arrivalStation = train.originalSegment ? train.originalSegment.to : null;
   if (!arrivalStation) return;
+
   train.onboard.forEach((commuter) => {
     if (
       commuter.route &&
@@ -103,23 +106,47 @@ function offloadPassengers(train, now) {
   train.onboard = train.onboard.filter(
     (commuter) => commuter.state === "riding"
   );
+  // Clear the original segment now that we've reached its destination.
   train.originalSegment = null;
+
+  // Check if the arrival station still exists on the train's line.
+  let stationIndex = line.stations.findIndex(
+    (station) => station.id === arrivalStation.id
+  );
+
+  if (stationIndex === -1) {
+    // The arrival station has been removed from the line.
+    train.onboard.forEach((commuter) => {
+      commuter.currentEdgeIndex = 0;
+      commuter.route = null; // Signal that a new route is needed.
+      commuter.state = "waiting";
+    });
+    train.onboard = [];
+    if (line.stations.length > 0) {
+      train.position = { x: line.stations[0].x, y: line.stations[0].y };
+      train.currentSegment = 0;
+    }
+    if (!line.isLoop) {
+      train.direction = 1;
+    }
+    train.state = "dwell";
+    train.dwellStart = now;
+    return;
+  }
+
+  // Arrival station still exists: update currentSegment based on its new index.
   if (!line.isLoop) {
-    if (
-      train.direction === 1 &&
-      train.currentSegment === line.stations.length - 2
+    if (stationIndex === 0 && train.direction === -1) {
+      train.direction = 1;
+    } else if (
+      stationIndex === line.stations.length - 1 &&
+      train.direction === 1
     ) {
       train.direction = -1;
-    } else if (train.direction === -1 && train.currentSegment === 0) {
-      train.direction = 1;
-    } else {
-      train.currentSegment += train.direction;
     }
+    train.currentSegment = stationIndex;
   } else {
-    train.currentSegment =
-      (train.currentSegment + train.direction) % (line.stations.length - 1);
-    if (train.currentSegment < 0)
-      train.currentSegment += line.stations.length - 1;
+    train.currentSegment = stationIndex;
   }
   train.state = "dwell";
   train.dwellStart = now;
@@ -132,16 +159,24 @@ export function updateTrains(metroLines, now) {
       if (train.currentSegment < 0) train.currentSegment = 0;
       if (train.currentSegment > line.stations.length - 2)
         train.currentSegment = line.stations.length - 2;
-      let from, to;
-      if (train.direction === 1) {
-        from = line.stations[train.currentSegment];
-        to = line.stations[train.currentSegment + 1];
+
+      // Use the locked-in original segment if in motion.
+      let segFrom, segTo;
+      if (train.state === "moving" && train.originalSegment) {
+        segFrom = train.originalSegment.from;
+        segTo = train.originalSegment.to;
       } else {
-        from = line.stations[train.currentSegment + 1];
-        to = line.stations[train.currentSegment];
+        if (train.direction === 1) {
+          segFrom = line.stations[train.currentSegment];
+          segTo = line.stations[train.currentSegment + 1];
+        } else {
+          segFrom = line.stations[train.currentSegment + 1];
+          segTo = line.stations[train.currentSegment];
+        }
       }
-      if (!from || !to) return;
-      let segLength = distance(from.x, from.y, to.x, to.y);
+      if (!segFrom || !segTo) return;
+      let segLength = distance(segFrom.x, segFrom.y, segTo.x, segTo.y);
+
       if (train.state === "dwell") {
         if (now - train.dwellStart >= dwellTime) {
           train.travelTime = computeTravelTime(
@@ -151,20 +186,21 @@ export function updateTrains(metroLines, now) {
           );
           train.state = "moving";
           train.departureTime = now;
+          // Lock in the original segment.
           train.originalSegment = {
-            from: { ...from },
-            to: { ...to },
+            from: { ...segFrom },
+            to: { ...segTo },
             travelTime: train.travelTime,
           };
         }
       } else if (train.state === "moving") {
-        let dx = to.x - from.x,
-          dy = to.y - from.y;
+        let dx = segTo.x - segFrom.x,
+          dy = segTo.y - segFrom.y;
         let normalized_dx = dx / segLength,
           normalized_dy = dy / segLength;
-        let d = distance(train.position.x, train.position.y, to.x, to.y);
+        let d = distance(train.position.x, train.position.y, segTo.x, segTo.y);
         if (d < maxSpeed) {
-          train.position = { x: to.x, y: to.y };
+          train.position = { x: segTo.x, y: segTo.y };
           offloadPassengers(train, now);
         } else {
           train.position = {
