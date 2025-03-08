@@ -5,6 +5,7 @@ import {
   distance,
   distanceToSegment,
   computeTabPosition,
+  generateRandomStationId,
 } from "./utils.js";
 import {
   holdThreshold,
@@ -53,8 +54,9 @@ export function setupInteractions(
   });
 
   deleteLineButton.addEventListener("click", () => {
-    metroLines = metroLines.filter(
-      (line) => line.color !== lineColorDropdown.value
+    metroLines.splice(
+      metroLines.findIndex((line) => line.color === lineColorDropdown.value),
+      1
     );
     recalcCommuterRoutesCallback();
   });
@@ -148,8 +150,13 @@ export function setupInteractions(
             (s) => s.col === closest.col && s.row === closest.row
           );
           if (!exists) {
+            let stationId = generateRandomStationId();
+            // Check if the stationId is already in use; if yes, generate a new one.
+            while (stations.some((station) => station.id === stationId)) {
+              stationId = generateRandomStationId();
+            }
             let newStation = {
-              id: String.fromCharCode(65 + stations.length),
+              id: stationId,
               x: closest.x,
               y: closest.y,
               col: closest.col,
@@ -265,26 +272,6 @@ export function setupInteractions(
         }
       }
     }
-
-    // ---- Update hold animation progress for station creation & removal ----
-    // TODO I don't think we need this
-    // const now = Date.now();
-    // if (state.stationCreationAnimation) {
-    //   const elapsed = now - state.stationCreationAnimation.startTime;
-    //   state.stationCreationAnimation.progress = Math.min(
-    //     elapsed / holdThreshold,
-    //     1
-    //   );
-    //   // Your render loop can use this progress (e.g. scaling the station circle)
-    // }
-    // if (state.stationRemovalAnimation) {
-    //   const elapsed = now - state.stationRemovalAnimation.startTime;
-    //   state.stationRemovalAnimation.progress = Math.min(
-    //     elapsed / holdThreshold,
-    //     1
-    //   );
-    //   // Use this progress to increase shaking amplitude, etc.
-    // }
   });
 
   canvas.addEventListener("mouseup", (e) => {
