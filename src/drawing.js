@@ -1,6 +1,6 @@
 // drawing.js
 import { computeTabPosition, distance } from "./utils.js";
-import { stationRadius, tabRadius, tabMargin, gridSpacing } from "./constants.js";
+import { stationRadius, tabRadius, tabMargin } from "./constants.js";
 
 export function drawStations(ctx, stations) {
   stations.forEach(s => {
@@ -153,10 +153,9 @@ function printRoute(commuter) {
   return segments;
 }
 
-export function drawCommuters(ctx, commuters, pinnedCommuter, hoveredCommuter) {
+export function drawCommuters(ctx, commuters, pinnedCommuter) {
   commuters.forEach(commuter => {
-    let isHighlighted = (pinnedCommuter && commuter.id === pinnedCommuter.id) ||
-                        (hoveredCommuter && commuter.id === hoveredCommuter.id);
+    let isHighlighted = (pinnedCommuter && commuter === pinnedCommuter);
     ctx.beginPath();
     ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
     ctx.fillStyle = "blue";
@@ -207,13 +206,13 @@ export function drawBackground(ctx, bgCanvas) {
   ctx.drawImage(bgCanvas, 0, 0);
 }
 
-export function draw(ctx, bgCanvas, metroLines, activeLine, currentMousePos, stations, commuters, pinnedCommuter, hoveredCommuter, arrivalEffects, now) {
+export function draw(ctx, bgCanvas, metroLines, activeLine, currentMousePos, stations, commuters, pinnedCommuter, arrivalEffects, now) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   drawBackground(ctx, bgCanvas);
   drawMetroLines(ctx, metroLines);
   drawActiveLine(ctx, activeLine, currentMousePos);
   drawStations(ctx, stations);
   drawTrains(ctx, metroLines);
-  drawCommuters(ctx, commuters, pinnedCommuter, hoveredCommuter);
+  drawCommuters(ctx, commuters, pinnedCommuter);
   drawArrivalEffects(ctx, arrivalEffects, now);
 }

@@ -1,131 +1,133 @@
 // background.js
-import { gridSpacing, canvasWidth, canvasHeight } from "./constants.js";
+import { gridSpacingX, gridSpacingY, canvasWidth, canvasHeight } from "./constants.js";
 
-function rectanglesOverlap(r1, r2) {
+// Helper: checks if two rectangles overlap considering a minimum gap.
+function rectanglesOverlapWithMargin(r1, r2, margin) {
   return !(
-    r2.x >= r1.x + r1.width ||
-    r2.x + r2.width <= r1.x ||
-    r2.y >= r1.y + r1.height ||
-    r2.y + r2.height <= r1.y
+    r2.x >= r1.x + r1.width + margin ||
+    r2.x + r2.width + margin <= r1.x ||
+    r2.y >= r1.y + r1.height + margin ||
+    r2.y + r2.height + margin <= r1.y
   );
 }
 
 export function createBackground(bgCanvas) {
   const bgCtx = bgCanvas.getContext("2d");
-  
-  // Clear background.
+
+  // Clear the background.
   bgCtx.fillStyle = "#ffffff";
   bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
-  
-  // Parameters for each grid cell.
-  const cellMargin = 5;  // margin inside each grid cell (keeps buildings off grid lines)
-  const availWidth = gridSpacing - 2 * cellMargin;
-  const availHeight = gridSpacing - 2 * cellMargin;
+
+  // Define margins.
+  const cellMargin = 5;      // Margin between the buildings area and the cell edges (i.e. street margin)
+  const buildingMargin = 2;  // Minimum gap between individual buildings
+
+  // Available drawing area within each cell.
+  const availWidth = gridSpacingX - 2 * cellMargin;
+  const availHeight = gridSpacingY - 2 * cellMargin;
   const cellArea = availWidth * availHeight;
-  const targetFillRatio = 0.6; // we aim to fill 60% of the cell's area with buildings
+  const targetFillRatio = 0.9; // Fill at least 90% of the available area.
   const targetFill = targetFillRatio * cellArea;
-  
-  // Parameters for building size:
-  // For small buildings (most cases)
-  const smallProb = 0.9;         // 90% chance for a small building.
-  const smallMin = 3;
-  const smallMax = 8;
-  // For big buildings (rare)
-  const bigMin = Math.min(availWidth, availHeight) * 0.5; // at least half the available size
-  const bigMax = Math.min(availWidth, availHeight);        // can fill nearly the whole cell
-  
-  // Determine grid cell count.
-  const cols = Math.floor(bgCanvas.width / gridSpacing);
-  const rows = Math.floor(bgCanvas.height / gridSpacing);
-  
-  // Process each cell.
+
+  // Building size constraints (as a percentage of the available cell dimensions).
+  const minWidthPercent = 0.05;   // 5% of availWidth
+  const maxWidthPercent = 0.25;   // 25% of availWidth
+  const minHeightPercent = 0.2;   // 20% of availHeight
+  const maxHeightPercent = 0.75;   // up to 80% of availHeight; if above, force full height.
+  const fullHeightForceThreshold = 0.7;
+
+  const cols = Math.floor(canvasWidth / gridSpacingX);
+  const rows = Math.floor(canvasHeight / gridSpacingY);
+
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
-      const cellLeft = col * gridSpacing;
-      const cellTop = row * gridSpacing;
+      const cellLeft = col * gridSpacingX;
+      const cellTop = row * gridSpacingY;
       const availX = cellLeft + cellMargin;
       const availY = cellTop + cellMargin;
-      
+
       let placedBuildings = [];
       let filledArea = 0;
       let attempts = 0;
-      // Continue trying until we reach the target fill or hit a maximum number of attempts.
-      while (filledArea < targetFill && attempts < 200) {
+      // Try placing buildings until we fill at least 90% of the cell area,
+      // or until we hit a maximum number of attempts.
+      while (filledArea < targetFill && attempts < 10000) {
         attempts++;
-        // Decide randomly: small (90%) or big (10%) building.
-        const isSmall = Math.random() < smallProb;
-        let minSize = isSmall ? smallMin : bigMin;
-        let maxSize = isSmall ? smallMax : bigMax;
-        
-        // Randomly choose one edge: 0 = left, 1 = top, 2 = right, 3 = bottom.
+
+        // Randomly choose building width.
+        const minBuildingWidth = availWidth * minWidthPercent;
+        const maxBuildingWidth = availWidth * maxWidthPercent;
+        let buildingWidth = minBuildingWidth + Math.random() * (maxBuildingWidth - minBuildingWidth);
+        buildingWidth = Math.min(buildingWidth, availWidth);
+
+        // Randomly choose building height.
+        const minBuildingHeight = availHeight * minHeightPercent;
+        const maxBuildingHeight = availHeight * maxHeightPercent;
+        let buildingHeight = minBuildingHeight + Math.random() * (maxBuildingHeight - minBuildingHeight);
+        // If the height exceeds 80% of the available height, force full available height.
+        if (buildingHeight > availHeight * fullHeightForceThreshold) {
+          buildingHeight = availHeight;
+        }
+        buildingHeight = Math.min(buildingHeight, availHeight);
+
+        // Randomly choose an edge: 0 = left, 1 = top, 2 = right, 3 = bottom.
         const edge = Math.floor(Math.random() * 4);
-        let building = null;
-        
-        if (edge === 0) { // Anchored to the left edge.
-          let width = minSize + Math.random() * (maxSize - minSize);
-          // Constrain width so it does not exceed available width.
-          width = Math.min(width, availWidth);
-          let height = minSize + Math.random() * (maxSize - minSize);
-          height = Math.min(height, availHeight);
-          let y = availY + Math.random() * (availHeight - height);
-          building = { x: availX, y, width, height, edge: 'left' };
-        } else if (edge === 1) { // Anchored to the top edge.
-          let height = minSize + Math.random() * (maxSize - minSize);
-          height = Math.min(height, availHeight);
-          let width = minSize + Math.random() * (maxSize - minSize);
-          width = Math.min(width, availWidth);
-          let x = availX + Math.random() * (availWidth - width);
-          building = { x, y: availY, width, height, edge: 'top' };
-        } else if (edge === 2) { // Anchored to the right edge.
-          let width = minSize + Math.random() * (maxSize - minSize);
-          width = Math.min(width, availWidth);
-          let height = minSize + Math.random() * (maxSize - minSize);
-          height = Math.min(height, availHeight);
-          let x = availX + availWidth - width;
-          let y = availY + Math.random() * (availHeight - height);
-          building = { x, y, width, height, edge: 'right' };
-        } else if (edge === 3) { // Anchored to the bottom edge.
-          let height = minSize + Math.random() * (maxSize - minSize);
-          height = Math.min(height, availHeight);
-          let width = minSize + Math.random() * (maxSize - minSize);
-          width = Math.min(width, availWidth);
-          let y = availY + availHeight - height;
-          let x = availX + Math.random() * (availWidth - width);
-          building = { x, y, width, height, edge: 'bottom' };
+        let posX, posY;
+        if (edge === 0) { 
+          // Anchored to left.
+          posX = availX;
+          posY = availY + Math.random() * (availHeight - buildingHeight);
+        } else if (edge === 1) {
+          // Anchored to top.
+          posY = availY;
+          posX = availX + Math.random() * (availWidth - buildingWidth);
+        } else if (edge === 2) {
+          // Anchored to right.
+          posX = availX + (availWidth - buildingWidth);
+          posY = availY + Math.random() * (availHeight - buildingHeight);
+        } else {
+          // Anchored to bottom.
+          posY = availY + (availHeight - buildingHeight);
+          posX = availX + Math.random() * (availWidth - buildingWidth);
         }
-        
-        // Check if this building overlaps any already placed building.
-        const overlaps = placedBuildings.some(b => rectanglesOverlap(b, building));
+
+        const newBuilding = {
+          x: posX,
+          y: posY,
+          width: buildingWidth,
+          height: buildingHeight,
+        };
+
+        // Check overlap with existing buildings using the building margin.
+        const overlaps = placedBuildings.some(b => rectanglesOverlapWithMargin(b, newBuilding, buildingMargin));
         if (!overlaps) {
-          placedBuildings.push(building);
-          filledArea += building.width * building.height;
+          placedBuildings.push(newBuilding);
+          filledArea += buildingWidth * buildingHeight;
         }
-      }
-      
-      // Draw the buildings for this cell.
+      } // end while for cell
+
+      // Draw the buildings in the cell.
       placedBuildings.forEach(b => {
-        // Use a random gray tone.
         const gray = Math.floor(150 + Math.random() * 100);
         bgCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
         bgCtx.fillRect(b.x, b.y, b.width, b.height);
       });
     }
   }
-  
+
   // Draw the road grid lines on top.
   bgCtx.save();
   bgCtx.strokeStyle = "#e0e0e0";
   bgCtx.lineWidth = 1;
-  
-  // Vertical lines.
-  for (let x = 0; x <= bgCanvas.width; x += gridSpacing) {
+  // Vertical grid lines.
+  for (let x = 0; x <= bgCanvas.width; x += gridSpacingX) {
     bgCtx.beginPath();
     bgCtx.moveTo(x, 0);
     bgCtx.lineTo(x, bgCanvas.height);
     bgCtx.stroke();
   }
-  // Horizontal lines.
-  for (let y = 0; y <= bgCanvas.height; y += gridSpacing) {
+  // Horizontal grid lines.
+  for (let y = 0; y <= bgCanvas.height; y += gridSpacingY) {
     bgCtx.beginPath();
     bgCtx.moveTo(0, y);
     bgCtx.lineTo(bgCanvas.width, y);

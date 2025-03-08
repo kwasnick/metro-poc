@@ -1,6 +1,7 @@
 // main.js
-import { canvasWidth, canvasHeight, gridSpacing, commuterSpawnInterval } from "./constants.js";
-import { stations, metroLines, commuters, arrivedCount } from "./globals.js";
+import { canvasWidth, canvasHeight, commuterSpawnInterval } from "./constants.js";
+import { gridSpacingX, gridSpacingY } from "./constants.js";
+import { stations, metroLines, commuters, arrivedCount, arrivalEffects } from "./globals.js";
 import { createBackground } from "./background.js";
 import { spawnDefaultTrains } from "./trains.js";
 import { spawnCommuter, updateCommuters } from "./commuters.js";
@@ -39,12 +40,17 @@ const state = {
 
 // Create grid nodes for path planning:
 let gridNodes = {};
-const canvasCols = Math.floor(canvas.width / gridSpacing) + 1;
-const canvasRows = Math.floor(canvas.height / gridSpacing) + 1;
+const canvasCols = Math.floor(canvasWidth / gridSpacingX) + 1;
+const canvasRows = Math.floor(canvasHeight / gridSpacingY) + 1;
 for (let col = 0; col < canvasCols; col++) {
   for (let row = 0; row < canvasRows; row++) {
     let key = col + "," + row;
-    gridNodes[key] = { col, row, x: col * gridSpacing, y: row * gridSpacing };
+    gridNodes[key] = { 
+      col, 
+      row, 
+      x: col * gridSpacingX, 
+      y: row * gridSpacingY 
+    };
   }
 }
 
@@ -60,7 +66,7 @@ setupInteractions(canvas, uiElements, state, gridNodes, stations, metroLines, co
 function update(now) {
   updateTrains(metroLines, now);
   updateCommuters(commuters, metroLines, gridNodes, now);
-  draw(ctx, bgCanvas, metroLines, state.activeLine, state.currentMousePos, stations, commuters, state.pinnedCommuter, null, /*hoveredCommuter*/ [], now);
+  draw(ctx, bgCanvas, metroLines, state.activeLine, state.currentMousePos, stations, commuters, state.pinnedCommuter, arrivalEffects, now);
   counterDiv.textContent = "Arrived: " + arrivedCount;
   requestAnimationFrame(update);
 }

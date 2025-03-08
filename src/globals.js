@@ -12,7 +12,5 @@ export let nextCommuterId = 1;
 export let arrivedCount = 0;
 export let arrivalEffects = []; // { x, y, startTime }
 
-// Hover/pin state for UI:
-export let hoveredCommuter = null;
+// Pin state for UI:
 export let pinnedCommuter = null;
-export let hoveredTrain = null;

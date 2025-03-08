@@ -1,5 +1,5 @@
 // pathfinding.js
-import { metroWaitTime, walkingSpeed } from "./constants.js";
+import { metroWaitTime, walkingSpeed, maxSpeed } from "./constants.js";
 import { distance } from "./utils.js";
 import { computeTravelTime } from "./utils.js";
 
@@ -39,18 +39,13 @@ export function buildRoadGraph(gridNodes, metroLines) {
       let keyB = b.col + "," + b.row;
       if (gridNodes[keyA] && gridNodes[keyB]) {
         let d = distance(a.x, a.y, b.x, b.y);
-        let waitingTime;
-        if (!line.isLoop) {
-          let totalDistance = 0;
-          for (let j = 0; j < line.stations.length - 1; j++) {
-            totalDistance += distance(line.stations[j].x, line.stations[j].y, line.stations[j+1].x, line.stations[j+1].y);
-          }
-          let numTrains = (line.trains && line.trains.length) ? line.trains.length : 1;
-          waitingTime = (2 * totalDistance) / (numTrains * walkingSpeed);
-        } else {
-          waitingTime =  metroWaitTime; // or use a fixed value as in your original code
+        let totalDistance = 0;
+        for (let j = 0; j < line.stations.length - 1; j++) {
+        totalDistance += distance(line.stations[j].x, line.stations[j].y, line.stations[j+1].x, line.stations[j+1].y);
         }
-        let metroCost = computeTravelTime(d, 0.0005, 1.0) + waitingTime;
+        let numTrains = (line.trains && line.trains.length) ? line.trains.length : 1;
+        let waitingTime = (2 * totalDistance) / (numTrains * maxSpeed);
+        let metroCost = d/maxSpeed + waitingTime;
         graph[keyA].push({ 
           from: a, 
           to: b, 

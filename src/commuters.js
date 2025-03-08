@@ -2,6 +2,7 @@
 import { distance } from "./utils.js";
 import { walkingSpeed, transferTime } from "./constants.js";
 import { computeFastestRoute } from "./pathfinding.js";
+import { arrivalEffects } from "./globals.js";
 
 export function spawnCommuter(gridNodes, metroLines, commuters, nextCommuterIdObj) {
   let gridKeys = Object.keys(gridNodes);
@@ -119,6 +120,7 @@ export function updateCommuters(commuters, metroLines, gridNodes, now) {
   // Remove arrived commuters:
   for (let i = commuters.length - 1; i >= 0; i--) {
     if (commuters[i].arrived) {
+      arrivalEffects.push({ x: commuters[i].position.x, y: commuters[i].position.y, startTime: now });
       commuters.splice(i, 1);
     }
   }

@@ -1,7 +1,10 @@
 // constants.js
 export const canvasWidth = 800;
 export const canvasHeight = 600;
-export const gridSpacing = 50;
+
+// Use a 2:1 ratio for grid cells (e.g. 100 x 50)
+export const gridSpacingX = 100;
+export const gridSpacingY = 50;
 
 // Metro/Train constants:
 export const acceleration = 0.0005;
