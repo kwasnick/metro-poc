@@ -34,6 +34,9 @@ export function setupInteractions(
   let stationCreationHoldTimer = null;
   let stationRemovalHoldTimer = null;
 
+  // New constant: if the mouse moves farther than this (in pixels) from the original point, cancel the hold.
+  const holdCancelThreshold = 20;
+
   // Animation states for station creation/removal.
   state.stationCreationAnimation = null; // { node, startTime, progress }
   state.stationRemovalAnimation = null; // { station, startTime, progress }
@@ -217,6 +220,32 @@ export function setupInteractions(
     currentMousePos.x = e.clientX - rect.left;
     currentMousePos.y = e.clientY - rect.top;
     state.currentMousePos = currentMousePos;
+
+    // Cancel station creation hold if moved too far from the original grid node.
+    if (state.stationCreationAnimation) {
+      const origin = state.stationCreationAnimation.node;
+      if (
+        distance(currentMousePos.x, currentMousePos.y, origin.x, origin.y) >
+        holdCancelThreshold
+      ) {
+        clearTimeout(stationCreationHoldTimer);
+        stationCreationHoldTimer = null;
+        state.stationCreationAnimation = null;
+      }
+    }
+
+    // Cancel station removal hold if moved too far from the original station.
+    if (state.stationRemovalAnimation) {
+      const origin = state.stationRemovalAnimation.station;
+      if (
+        distance(currentMousePos.x, currentMousePos.y, origin.x, origin.y) >
+        holdCancelThreshold
+      ) {
+        clearTimeout(stationRemovalHoldTimer);
+        stationRemovalHoldTimer = null;
+        state.stationRemovalAnimation = null;
+      }
+    }
 
     // Update metro line editing interactions.
     if (state.activeLine && isDragging) {
