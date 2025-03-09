@@ -447,7 +447,6 @@ export function setupInteractions(
   });
 
   canvas.addEventListener("click", (e) => {
-    console.log("click", e);
     // Existing commuter pinning functionality.
     if (state.activeLine) return;
     currentMousePos = getXY(e);
@@ -466,11 +465,15 @@ export function setupInteractions(
     }
   });
 
+  let touchStartX, touchStartY, touchStartTime;
+
   // Add touch event listeners for mobile devices.
   canvas.addEventListener("touchstart", function (e) {
-    console.log("touchstart", e);
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchStartTime = Date.now();
     e.preventDefault();
-    let touch = e.touches[0];
     let simulatedEvent = new MouseEvent("mousedown", {
       clientX: touch.clientX,
       clientY: touch.clientY,
@@ -494,18 +497,37 @@ export function setupInteractions(
     canvas.dispatchEvent(simulatedEvent);
   });
 
-  canvas.addEventListener("touchend", function (e) {
-    e.preventDefault();
-    // Slight delay to ensure hold timers can fire if needed
-    setTimeout(() => {
+  canvas.addEventListener(
+    "touchend",
+    function (e) {
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      const dt = Date.now() - touchStartTime;
+
+      // If movement is small and duration short, treat it as a click.
+      if (Math.hypot(dx, dy) < 10 && dt < 300) {
+        let clickEvent = new MouseEvent("click", {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+        });
+        canvas.dispatchEvent(clickEvent);
+      }
+
+      // Also dispatch mouseup if needed.
       let simulatedEvent = new MouseEvent("mouseup", {
-        clientX: e.changedTouches[0].clientX,
-        clientY: e.changedTouches[0].clientY,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
         bubbles: true,
         cancelable: true,
         button: 0,
       });
       canvas.dispatchEvent(simulatedEvent);
-    }, 100);
-  });
+    },
+    { passive: false }
+  );
 }
