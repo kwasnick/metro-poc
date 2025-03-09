@@ -130,12 +130,15 @@ export function setupInteractions(
         return;
       }
 
-      // Check for metro line segment modification.
       let segInfo = null;
       for (let line of metroLines) {
-        for (let i = 0; i < line.stations.length - 1; i++) {
+        // Check each consecutive pair of stations first
+        for (let i = 0; i < line.stations.length; i++) {
           let a = line.stations[i],
             b = line.stations[i + 1];
+          if (i == line.stations.length - 1) {
+            b = line.stations[0];
+          }
           let d = distanceToSegment(x, y, a.x, a.y, b.x, b.y);
           if (d < 5) {
             segInfo = { line, segmentIndex: i };
@@ -144,6 +147,7 @@ export function setupInteractions(
         }
         if (segInfo) break;
       }
+
       if (segInfo) {
         state.activeLine = segInfo.line;
         state.activeLine.editingMode = "modify";
@@ -256,45 +260,55 @@ export function setupInteractions(
     if (state.activeLine) {
       if (state.activeLine.editingMode === "modify") {
         let idx = state.activeLine.modifySegmentIndex;
-        let X = state.activeLine.originalStations[idx];
-        let Y = state.activeLine.originalStations[idx + 1];
+        let stations = state.activeLine.originalStations;
+        // For loop lines, if idx is the last station then Y should be the first station.
+        let X = stations[idx];
+        let Y =
+          idx === stations.length - 1 && state.activeLine.isLoop
+            ? stations[0]
+            : stations[idx + 1];
         let minStations = state.activeLine.isLoop ? 3 : 2;
+
         if (state.activeLine.modifyCandidate) {
+          // Candidate equals one of the segment endpoints and deletion is allowed.
           if (
             (state.activeLine.modifyCandidate.id === X.id ||
               state.activeLine.modifyCandidate.id === Y.id) &&
-            state.activeLine.originalStations.length > minStations
+            stations.length > minStations
           ) {
-            state.activeLine.stations =
-              state.activeLine.originalStations.slice();
+            state.activeLine.stations = stations.slice();
             if (state.activeLine.modifyCandidate.id === X.id) {
               state.activeLine.stations.splice(idx, 1);
             } else {
-              state.activeLine.stations.splice(idx + 1, 1);
+              // For a loop, if idx is the last station then candidate Y is at index 0.
+              if (idx === stations.length - 1 && state.activeLine.isLoop) {
+                state.activeLine.stations.splice(0, 1);
+              } else {
+                state.activeLine.stations.splice(idx + 1, 1);
+              }
             }
-          } else if (
+          }
+          // Candidate is not one of the segment endpoints, so try to insert it if it doesn't already exist.
+          else if (
             state.activeLine.modifyCandidate.id !== X.id &&
             state.activeLine.modifyCandidate.id !== Y.id
           ) {
             if (
-              !state.activeLine.originalStations.some(
+              !stations.some(
                 (s) => s.id === state.activeLine.modifyCandidate.id
               )
             ) {
-              state.activeLine.stations =
-                state.activeLine.originalStations.slice();
+              state.activeLine.stations = stations.slice();
               state.activeLine.stations.splice(
                 idx + 1,
                 0,
                 state.activeLine.modifyCandidate
               );
             } else {
-              state.activeLine.stations =
-                state.activeLine.originalStations.slice();
+              state.activeLine.stations = stations.slice();
             }
           } else {
-            state.activeLine.stations =
-              state.activeLine.originalStations.slice();
+            state.activeLine.stations = stations.slice();
           }
         }
         state.activeLine.editingMode = "new";

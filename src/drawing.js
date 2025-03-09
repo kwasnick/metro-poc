@@ -167,6 +167,7 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
       ctx.stroke();
       ctx.lineWidth = 2;
     } else if (activeLine.editingMode === "modify") {
+      // Render original stations (faded)
       ctx.save();
       ctx.globalAlpha = 0.3;
       ctx.beginPath();
@@ -175,11 +176,27 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
         if (i === 0) ctx.moveTo(s.x, s.y);
         else ctx.lineTo(s.x, s.y);
       });
+      // If it's a loop, draw back to the first station.
+      if (activeLine.isLoop) {
+        ctx.lineTo(
+          activeLine.originalStations[0].x,
+          activeLine.originalStations[0].y
+        );
+      }
       ctx.stroke();
       ctx.restore();
+
+      // Prepare modified stations by inserting the modify cursor
       let tempStations = activeLine.originalStations.slice();
       let idx = activeLine.modifySegmentIndex;
       tempStations.splice(idx + 1, 0, activeLine.modifyCursor);
+
+      // If modifying the loop edge, ensure we complete the loop by adding the first station.
+      if (activeLine.isLoop && idx === activeLine.originalStations.length - 1) {
+        tempStations.push(activeLine.originalStations[0]);
+      }
+
+      // Render the modified line with thicker stroke.
       ctx.beginPath();
       ctx.lineWidth = 4;
       ctx.strokeStyle = activeLine.color;
