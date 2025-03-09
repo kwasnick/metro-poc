@@ -105,10 +105,23 @@ function update(now) {
 }
 
 // Spawn commuters at intervals:
-setInterval(() => {
+
+const spawnRateSlider = document.getElementById("spawnRateSlider");
+const spawnRateValue = document.getElementById("spawnRateValue");
+
+// Update the displayed value when the slider is moved.
+spawnRateSlider.addEventListener("input", () => {
+  spawnRateValue.textContent = spawnRateSlider.value;
+});
+// Replace fixed interval with a dynamic recursive spawner.
+function scheduleNextCommuter() {
   spawnCommuter(gridNodes, metroLines, commuters, {
     value: state.nextCommuterId,
   });
-}, commuterSpawnInterval);
+  // Read current slider value (in milliseconds)
+  const interval = parseInt(spawnRateSlider.value, 10);
+  setTimeout(scheduleNextCommuter, interval);
+}
+scheduleNextCommuter();
 
 requestAnimationFrame(update);
