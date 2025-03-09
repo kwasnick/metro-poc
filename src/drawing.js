@@ -196,15 +196,17 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
         tempStations.push(activeLine.originalStations[0]);
       }
 
-      // Render the modified line with thicker stroke.
+      // Render the modified line with thicker stroke and dashed style.
       ctx.beginPath();
       ctx.lineWidth = 4;
       ctx.strokeStyle = activeLine.color;
+      ctx.setLineDash([5, 5]); // Set the dashed style
       tempStations.forEach((p, i) => {
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       });
       ctx.stroke();
+      ctx.setLineDash([]); // Reset to solid line style for future drawing
       ctx.lineWidth = 2;
     } else if (activeLine.editingMode === "extend") {
       let endpoint =
