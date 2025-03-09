@@ -70,7 +70,6 @@ export function setupInteractions(
     let { x, y } = currentMousePos;
     state.currentMousePos = currentMousePos;
 
-    // ---- If no metro line is active, check for station creation/removal via hold ----
     if (!state.activeLine) {
       // (A) Prioritize metro line tab interactions:
       let clickedTab = null;
@@ -131,11 +130,6 @@ export function setupInteractions(
         return;
       }
 
-      return;
-    }
-
-    // ---- Existing metro line interactions ----
-    if (!state.activeLine) {
       // Check for metro line segment modification.
       let segInfo = null;
       for (let line of metroLines) {

@@ -161,10 +161,6 @@ export function updateTrains(metroLines, now) {
   metroLines.forEach((line) => {
     if (line.stations.length < 2) return;
     line.trains.forEach((train) => {
-      // if (train.currentSegment < 0) train.currentSegment = 0;
-      // if (train.currentSegment > line.stations.length - 2)
-      //   train.currentSegment = line.stations.length - 2;
-
       if (train.state === "dwell") {
         if (now - train.dwellStart >= dwellTime) {
           console.log(
