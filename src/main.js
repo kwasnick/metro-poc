@@ -19,6 +19,7 @@ import { updateTrains } from "./trains.js";
 import { draw } from "./drawing.js";
 import { setupInteractions } from "./interactions.js";
 import { recalculateRoutes } from "./commuters.js";
+import { COLORS } from "./constants.js";
 
 // Initialize canvas
 const canvas = document.getElementById("gameCanvas");
@@ -37,6 +38,7 @@ createBackground(bgCanvas);
 
 // Setup UI elements
 const lineColorDropdown = document.getElementById("lineColorDropdown");
+lineColorDropdown.value = COLORS.red;
 const deleteLineButton = document.getElementById("deleteLineButton");
 const counterDiv = document.getElementById("counter");
 const uiElements = {

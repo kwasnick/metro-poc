@@ -5,6 +5,7 @@ import {
   tabRadius,
   tabMargin,
   holdThreshold,
+  COLOR_NAMES,
 } from "./constants.js";
 
 export function drawStations(ctx, stations) {
@@ -280,8 +281,9 @@ function printRoute(commuter) {
       );
     } else if (mode === "metro") {
       let lineColor = currentEdge.line ? currentEdge.line.color : "";
+      let lineColorName = COLOR_NAMES[lineColor];
       segments.push(
-        `${prefix} train on ${lineColor} line from ${start.id} to ${end.id}`
+        `${prefix} train on ${lineColorName} line from ${start.id} to ${end.id}`
       );
     }
   }

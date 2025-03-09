@@ -28,3 +28,22 @@ export const transferTime = 3000;
 
 // Creation / deletion
 export const holdThreshold = 1000; // milliseconds required for hold actions
+
+// Mapping of color names to hex values
+export const COLORS = {
+  red: "#ff0000",
+  blue: "#0000ff",
+  green: "#00ff00",
+  yellow: "#ffff00",
+  purple: "#800080",
+  orange: "#ffa500",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  brown: "#8b4513",
+  black: "#000000",
+};
+
+// Optional: Reverse mapping of hex values to color names
+export const COLOR_NAMES = Object.fromEntries(
+  Object.entries(COLORS).map(([name, hex]) => [hex, name])
+);
