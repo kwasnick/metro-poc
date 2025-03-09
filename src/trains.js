@@ -71,6 +71,20 @@ export function spawnDefaultTrains(line) {
   }
 }
 
+export function getNextStop(train) {
+  if (!train.state === "dwell") return null;
+  let segToIdx;
+  if (train.direction === 1) {
+    // Going in positive direction.
+    segToIdx = (train.currentStationIndex + 1) % train.line.stations.length;
+  } else {
+    // For negative direction, wrap backwards.
+    segToIdx = train.currentStationIndex - 1;
+    if (segToIdx < 0) segToIdx = train.line.stations.length - 1;
+  }
+  return train.line.stations[segToIdx];
+}
+
 function offloadPassengersAndProgress(train, now) {
   let line = train.line;
   let arrivalStation = train.originalSegment ? train.originalSegment.to : null;
@@ -163,26 +177,10 @@ export function updateTrains(metroLines, now) {
     line.trains.forEach((train) => {
       if (train.state === "dwell") {
         if (now - train.dwellStart >= dwellTime) {
-          console.log(
-            `train ${train.id} leaving station ${train.currentStationIndex} at ${now}`
-          );
           // The train leaves the station.
           // The train needs to determine its segFrom and segTo based on its currentStationIndex and direction
           let segFrom = line.stations[train.currentStationIndex];
-          let segTo;
-          if (train.direction === 1) {
-            // Going in positive direction.
-            let segToIdx =
-              (train.currentStationIndex + 1) % line.stations.length;
-            segTo = line.stations[segToIdx];
-          } else {
-            // For negative direction, wrap backwards.
-            let segToIdx = train.currentStationIndex - 1;
-            if (segToIdx < 0) segToIdx = line.stations.length - 1;
-            console.log("segToIdx", segToIdx);
-            console.log("stations", line.stations);
-            segTo = line.stations[segToIdx];
-          }
+          let segTo = getNextStop(train);
 
           let segLength = distance(segFrom.x, segFrom.y, segTo.x, segTo.y);
           train.travelTime = computeTravelTime(

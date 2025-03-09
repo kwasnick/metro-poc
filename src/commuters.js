@@ -3,6 +3,7 @@ import { distance } from "./utils.js";
 import { walkingSpeed, transferTime } from "./constants.js";
 import { computeFastestRoute } from "./pathfinding.js";
 import { arrivalEffects } from "./globals.js";
+import { getNextStop } from "./trains.js";
 
 export function spawnCommuter(
   gridNodes,
@@ -159,35 +160,7 @@ export function updateCommuters(commuters, metroLines, gridNodes, now) {
       if (!edge.line) return;
       let candidate = edge.line.trains.find((train) => {
         if (train.state !== "dwell") return false;
-        let posStation;
-        if (train.direction === 1) {
-          posStation = train.line.stations[train.currentSegment];
-        } else {
-          // For negative-direction trains, use currentSegment+1 if available;
-          // if not, fall back to currentSegment.
-          posStation =
-            train.line.stations[train.currentSegment + 1] ||
-            train.line.stations[train.currentSegment];
-        }
-        if (!posStation) return false;
-        if (
-          posStation.col === edge.from.col &&
-          posStation.row === edge.from.row
-        ) {
-          if (train.direction === 1) {
-            let nextStation = train.line.stations[train.currentSegment + 1];
-            if (!nextStation) return false;
-            return (
-              nextStation.col === edge.to.col && nextStation.row === edge.to.row
-            );
-          } else {
-            let prevStation = train.line.stations[train.currentSegment];
-            return (
-              prevStation.col === edge.to.col && prevStation.row === edge.to.row
-            );
-          }
-        }
-        return false;
+        return getNextStop(train) === edge.to;
       });
       if (candidate) {
         commuter.state = "riding";
