@@ -26,6 +26,8 @@ export const maxStationCount = 26;
 export const metroWaitTime = dwellTime / 2;
 export const transferTime = 3000;
 
+export const defaultSpawnRate = 3;
+
 // Creation / deletion
 export const holdThreshold = 1000; // milliseconds required for hold actions
 

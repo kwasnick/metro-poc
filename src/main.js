@@ -3,6 +3,7 @@ import {
   canvasWidth,
   canvasHeight,
   commuterSpawnInterval,
+  defaultSpawnRate,
 } from "./constants.js";
 import { gridSpacingX, gridSpacingY } from "./constants.js";
 import {
@@ -105,7 +106,7 @@ function update(now) {
     now,
     state
   );
-  let score = roundTo((getArrivalRate() * spawnRateSlider.value) / 1000, 2);
+  let score = roundTo(getArrivalRate(), 2);
   if (score > highScore) {
     highScore = score;
   }
@@ -128,7 +129,8 @@ function scheduleNextCommuter() {
     value: state.nextCommuterId,
   });
   // Read current slider value (in milliseconds)
-  const interval = parseInt(spawnRateSlider.value, 10);
+  let spawnSliderVal = parseInt(spawnRateSlider.value, 10);
+  const interval = (commuterSpawnInterval * defaultSpawnRate) / spawnSliderVal;
   setTimeout(scheduleNextCommuter, interval);
 }
 scheduleNextCommuter();
