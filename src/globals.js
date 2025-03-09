@@ -10,6 +10,11 @@ export let nextCommuterId = 1;
 
 // Arrival stats and effects:
 export let arrivedCount = 0;
+
+export function setArrivedCount(count) {
+  arrivedCount = count;
+}
+
 export let arrivalEffects = []; // { x, y, startTime }
 
 // Pin state for UI:

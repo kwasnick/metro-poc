@@ -11,7 +11,7 @@ import {
   holdThreshold,
   stationRadius,
   snapThreshold,
-  tabRadius,
+  tabClickRadius,
   tabMargin,
 } from "./constants.js";
 import { spawnDefaultTrains } from "./trains.js";
@@ -83,11 +83,11 @@ export function setupInteractions(
           tabMargin
         );
         let tabEnd = computeTabPosition(line, "end", stationRadius, tabMargin);
-        if (distance(x, y, tabStart.x, tabStart.y) < 8) {
+        if (distance(x, y, tabStart.x, tabStart.y) < tabClickRadius) {
           clickedTab = line;
           extendEnd = "start";
           break;
-        } else if (distance(x, y, tabEnd.x, tabEnd.y) < 8) {
+        } else if (distance(x, y, tabEnd.x, tabEnd.y) < tabClickRadius) {
           clickedTab = line;
           extendEnd = "end";
           break;

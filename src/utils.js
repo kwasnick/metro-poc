@@ -93,3 +93,7 @@ export function generateRandomStationId() {
   }
   return id;
 }
+
+export function roundTo(num, to) {
+  return parseFloat(num.toFixed(to));
+}

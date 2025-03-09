@@ -4,6 +4,7 @@ import { walkingSpeed, transferTime } from "./constants.js";
 import { computeFastestRoute } from "./pathfinding.js";
 import { arrivalEffects } from "./globals.js";
 import { getNextStop } from "./trains.js";
+import { recordArrival } from "./arrivalRate.js";
 
 export function spawnCommuter(
   gridNodes,
@@ -178,6 +179,7 @@ export function updateCommuters(commuters, metroLines, gridNodes, now) {
         startTime: now,
       });
       commuters.splice(i, 1);
+      recordArrival();
     }
   }
 }

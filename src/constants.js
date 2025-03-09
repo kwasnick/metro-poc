@@ -1,6 +1,6 @@
 // constants.js
-export const canvasWidth = 600;
-export const canvasHeight = 1000;
+export const canvasWidth = 500;
+export const canvasHeight = 850;
 
 // Use a 2:1 ratio for grid cells (e.g. 100 x 50)
 export const gridSpacingX = 100;
@@ -14,8 +14,8 @@ export const dwellTime = 2000;
 // Station and drawing constants:
 export const stationRadius = 15;
 export const snapThreshold = 20;
-export const tabMargin = 10;
-export const tabRadius = 6;
+export const tabMargin = 15;
+export const tabClickRadius = 20;
 
 // Commuter/Walking constants:
 export const commuterSpawnInterval = 1500;

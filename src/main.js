@@ -12,6 +12,7 @@ import {
   arrivedCount,
   arrivalEffects,
 } from "./globals.js";
+import { roundTo } from "./utils.js";
 import { createBackground } from "./background.js";
 import { spawnDefaultTrains } from "./trains.js";
 import { spawnCommuter, updateCommuters } from "./commuters.js";
@@ -20,6 +21,7 @@ import { draw } from "./drawing.js";
 import { setupInteractions } from "./interactions.js";
 import { recalculateRoutes } from "./commuters.js";
 import { COLORS } from "./constants.js";
+import { getArrivalRate } from "./arrivalRate.js";
 
 // Initialize canvas
 const canvas = document.getElementById("gameCanvas");
@@ -83,6 +85,8 @@ setupInteractions(
   stationIcon
 );
 
+let highScore = 0;
+
 // Main update loop
 function update(now) {
   updateTrains(metroLines, now);
@@ -100,7 +104,11 @@ function update(now) {
     now,
     state
   );
-  counterDiv.textContent = "Arrived: " + arrivedCount;
+  let score = roundTo((getArrivalRate() * spawnRateSlider.value) / 1000, 2);
+  if (score > highScore) {
+    highScore = score;
+  }
+  counterDiv.textContent = "Score: " + score + " | High Score: " + highScore;
   requestAnimationFrame(update);
 }
 
