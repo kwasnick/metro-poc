@@ -26,16 +26,19 @@
       <input
         type="range"
         id="spawnRateSlider"
-        min="100"
+        min="500"
         max="5000"
         step="100"
         value="1500"
       />
       <span id="spawnRateValue">1500</span>
-      <button id="stationIcon" draggable="true">🚉</button>
+      <div id="counter">Arrived: 0</div>
     </div>
-    <div id="counter">Arrived: 0</div>
-    <div id="trainPopup"></div>
+
+    <p id="instructions">
+      Drag a station onto the map!
+      <button id="stationIcon" draggable="true">🚉</button>
+    </p>
     <canvas id="gameCanvas" width="400" height="800"></canvas>
     <script type="module" src="src/main.js"></script>
   </body>

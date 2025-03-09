@@ -39,12 +39,10 @@ createBackground(bgCanvas);
 const lineColorDropdown = document.getElementById("lineColorDropdown");
 const deleteLineButton = document.getElementById("deleteLineButton");
 const counterDiv = document.getElementById("counter");
-const trainPopup = document.getElementById("trainPopup");
 const uiElements = {
   lineColorDropdown,
   deleteLineButton,
   counterDiv,
-  trainPopup,
 };
 
 // Global state object for interactions
