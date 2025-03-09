@@ -7,19 +7,39 @@ import {
   COLOR_NAMES,
 } from "./constants.js";
 
-export function drawStations(ctx, stations) {
+export function drawStations(ctx, stations, commuters) {
   stations.forEach((s) => {
+    // Draw the station circle.
     ctx.beginPath();
     ctx.arc(s.x, s.y, stationRadius, 0, 2 * Math.PI);
     ctx.fillStyle = "#FFF";
     ctx.fill();
     ctx.strokeStyle = "#000";
     ctx.stroke();
+
+    // Draw the station id in the center.
     ctx.fillStyle = "#000";
     ctx.font = "12px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(s.id, s.x, s.y);
+
+    // Count the number of commuters at this station.
+    // Adjust this logic if commuter positions are stored differently.
+    const passengerCount = commuters.filter(
+      (c) =>
+        c.position.x === s.x &&
+        c.position.y === s.y &&
+        (c.state === "waitingForTrain" || c.state === "transferring")
+    ).length;
+
+    // Draw the passenger count near the station.
+    // Here we position the count at the top right relative to the station.
+    ctx.font = "10px Arial";
+    ctx.fillStyle = "#555";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(passengerCount, s.x + stationRadius, s.y - stationRadius);
   });
 }
 
@@ -471,7 +491,7 @@ export function draw(
   drawBackground(ctx, bgCanvas);
   drawMetroLines(ctx, metroLines);
   drawActiveLine(ctx, activeLine, currentMousePos);
-  drawStations(ctx, stations);
+  drawStations(ctx, stations, commuters);
   drawTrains(ctx, metroLines);
   drawCommuters(ctx, commuters, pinnedCommuter);
   drawArrivalEffects(ctx, arrivalEffects, now);
