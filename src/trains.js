@@ -2,6 +2,7 @@ import { distance } from "./utils.js";
 import { acceleration, maxSpeed, dwellTime } from "./constants.js";
 import { computeTravelTime } from "./utils.js";
 import { boardEffects } from "./globals.js";
+import { recalculateRoute } from "./commuters.js";
 
 export function spawnDefaultTrains(line) {
   line.trains = [];
@@ -86,7 +87,7 @@ export function getNextStop(train) {
   return train.line.stations[segToIdx];
 }
 
-function offloadPassengersAndProgress(train, now) {
+function offloadPassengersAndProgress(train, metroLines, gridNodes, now) {
   let line = train.line;
   let arrivalStation = train.originalSegment ? train.originalSegment.to : null;
   if (!arrivalStation) return;
@@ -98,7 +99,14 @@ function offloadPassengersAndProgress(train, now) {
       commuter.route[commuter.currentEdgeIndex].mode === "metro" &&
       commuter.route[commuter.currentEdgeIndex].to.id === arrivalStation.id
     ) {
+      // Move to the next edge.
+      // In general we can assume that this will always happen
       commuter.currentEdgeIndex += 1;
+    } else {
+      // Something weird happened -- the commuter is at a station they didn't intend to go to.
+      commuter.state = "walking";
+      recalculateRoute(commuter, gridNodes, metroLines);
+      return;
     }
     if (
       commuter.state === "riding" &&
@@ -127,6 +135,7 @@ function offloadPassengersAndProgress(train, now) {
       }
     }
   });
+  // make sure we no longer track any passengers that got off.
   train.onboard = train.onboard.filter(
     (commuter) => commuter.state === "riding"
   );
@@ -178,7 +187,7 @@ function offloadPassengersAndProgress(train, now) {
   train.dwellStart = now;
 }
 
-export function updateTrains(metroLines, now) {
+export function updateTrains(metroLines, gridNodes, now) {
   metroLines.forEach((line) => {
     if (line.stations.length < 2) return;
     line.trains.forEach((train) => {
@@ -216,7 +225,7 @@ export function updateTrains(metroLines, now) {
         if (d < maxSpeed) {
           // Arrive at next station.
           train.position = { x: segTo.x, y: segTo.y };
-          offloadPassengersAndProgress(train, now);
+          offloadPassengersAndProgress(train, metroLines, gridNodes, now);
         } else {
           train.position = {
             x: train.position.x + normalized_dx * maxSpeed,

@@ -89,7 +89,7 @@ let highScore = 0;
 
 // Main update loop
 function update(now) {
-  updateTrains(metroLines, now);
+  updateTrains(metroLines, gridNodes, now);
   updateCommuters(commuters, metroLines, gridNodes, now);
   draw(
     ctx,

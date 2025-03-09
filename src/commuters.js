@@ -42,6 +42,39 @@ export function spawnCommuter(
   commuters.push(commuter);
 }
 
+export function recalculateRoute(commuter, gridNodes, metroLines) {
+  // Only recalc for commuters in walking or waiting states.
+  if (commuter.state === "walking" || commuter.state === "waitingForTrain") {
+    // Find the closest grid node to the commuter's current position.
+    let bestDistance = Infinity;
+    let startNode = null;
+    for (let key in gridNodes) {
+      const node = gridNodes[key];
+      const d = distance(
+        commuter.position.x,
+        commuter.position.y,
+        node.x,
+        node.y
+      );
+      if (d < bestDistance) {
+        bestDistance = d;
+        startNode = node;
+      }
+    }
+    if (startNode && commuter.goalNode) {
+      // Compute a new route from the start node to the commuter's goal.
+      const newRoute = computeFastestRoute(
+        gridNodes,
+        metroLines,
+        startNode,
+        commuter.goalNode
+      );
+      commuter.route = newRoute;
+      commuter.currentEdgeIndex = 0;
+    }
+  }
+}
+
 /**
  * Recalculates routes for each commuter.
  * @param {Array} commuters - The array of commuter objects.
@@ -50,36 +83,7 @@ export function spawnCommuter(
  */
 export function recalculateRoutes(commuters, gridNodes, metroLines) {
   commuters.forEach((commuter) => {
-    // Only recalc for commuters in walking or waiting states.
-    if (commuter.state === "walking" || commuter.state === "waitingForTrain") {
-      // Find the closest grid node to the commuter's current position.
-      let bestDistance = Infinity;
-      let startNode = null;
-      for (let key in gridNodes) {
-        const node = gridNodes[key];
-        const d = distance(
-          commuter.position.x,
-          commuter.position.y,
-          node.x,
-          node.y
-        );
-        if (d < bestDistance) {
-          bestDistance = d;
-          startNode = node;
-        }
-      }
-      if (startNode && commuter.goalNode) {
-        // Compute a new route from the start node to the commuter's goal.
-        const newRoute = computeFastestRoute(
-          gridNodes,
-          metroLines,
-          startNode,
-          commuter.goalNode
-        );
-        commuter.route = newRoute;
-        commuter.currentEdgeIndex = 0;
-      }
-    }
+    recalculateRoute(commuter, gridNodes, metroLines);
   });
 }
 
