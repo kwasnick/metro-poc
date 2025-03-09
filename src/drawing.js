@@ -230,21 +230,35 @@ export function drawActiveLine(ctx, activeLine, currentMousePos) {
 export function drawTrains(ctx, metroLines) {
   metroLines.forEach((line) => {
     line.trains.forEach((train) => {
+      // Calculate rotation based on the train's original segment if available
+      let rotation = 0;
+      if (train.originalSegment) {
+        const dy = train.originalSegment.to.y - train.originalSegment.from.y;
+        const dx = train.originalSegment.to.x - train.originalSegment.from.x;
+        rotation = Math.atan2(dy, dx);
+      }
+
+      // Save the current canvas state
+      ctx.save();
+
+      // Translate the context to the train's position
+      ctx.translate(train.position.x, train.position.y);
+      // Rotate the context by the computed angle
+      ctx.rotate(rotation);
+
+      // Draw the train as a rectangle centered on (0,0)
+      // For example, a 30x20 rectangle
       ctx.beginPath();
-      ctx.arc(train.position.x, train.position.y, 15, 0, 2 * Math.PI);
+      ctx.rect(-15, -10, 30, 20); // offsets to center the rectangle
       ctx.fillStyle = line.color;
       ctx.fill();
+      // Optionally add a border around the train
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#000";
+      ctx.stroke();
 
-      // Draw the currentSegment value as text on the train.
-      ctx.fillStyle = "black";
-      ctx.font = "bold 12px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(
-        train.currentStationIndex,
-        train.position.x,
-        train.position.y
-      );
+      // Restore the canvas state so further drawing is not affected
+      ctx.restore();
     });
   });
 }
@@ -282,6 +296,9 @@ export function drawCommuters(ctx, commuters, pinnedCommuter) {
     ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
     ctx.fillStyle = "blue";
     ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
 
     if (isHighlighted) {
       // Draw the commuter's route as a dotted, translucent red line.
