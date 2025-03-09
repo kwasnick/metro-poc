@@ -32,7 +32,6 @@ body {
     max-width: 800px;
     height: auto;
     border: 1px solid #ccc;
-    touch-action: none;
   }
   
   /* Optional: Force vertical layout for portrait orientation */
