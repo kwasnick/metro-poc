@@ -182,9 +182,32 @@ export function setupInteractions(
         stationRemovalHoldTimer = null;
         state.stationRemovalAnimation = null;
         // Enter new line creation mode using the clicked station.
+
+        // Get the colors already used by existing metro lines.
+        let usedLineColors = metroLines.map((l) => l.color);
+
+        // Get the dropdown element and its available colors.
+        let lineColorDropdown = document.getElementById("lineColorDropdown");
+        let availableColors = Array.from(lineColorDropdown.options).map(
+          (option) => option.value
+        );
+
+        // Find the first available color that hasn't been used yet.
+        let uniqueColor = availableColors.find(
+          (color) => !usedLineColors.includes(color)
+        );
+
+        if (!uniqueColor) {
+          // no color available.
+          return;
+        } else {
+          lineColorDropdown.value = uniqueColor;
+        }
+
+        // Create the new active line using the unique color.
         state.activeLine = {
           id: state.nextLineId++,
-          color: lineColorDropdown.value,
+          color: uniqueColor,
           stations: [origin],
           trains: [],
           editingMode: "new",
