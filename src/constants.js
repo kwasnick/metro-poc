@@ -31,8 +31,8 @@ export const holdThreshold = 1000; // milliseconds required for hold actions
 
 // Mapping of color names to hex values
 export const COLORS = {
-  red: "#ff0000",
-  blue: "#0000ff",
+  red: "#ff3333",
+  blue: "#89CFF0",
   green: "#00ff00",
   yellow: "#ffff00",
   purple: "#800080",

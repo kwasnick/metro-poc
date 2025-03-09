@@ -239,15 +239,37 @@ export function drawTrains(ctx, metroLines) {
       ctx.rotate(rotation);
 
       // Draw the train as a rectangle centered on (0,0)
-      // For example, a 24x12
+      // For example, a 24x12 rectangle
       ctx.beginPath();
       ctx.rect(-12, -6, 24, 12); // offsets to center the rectangle
       ctx.fillStyle = line.color;
       ctx.fill();
-      // Optionally add a border around the train
+      // Add a border around the train
       ctx.lineWidth = 2;
       ctx.strokeStyle = "#000";
       ctx.stroke();
+
+      // Draw riders on the train as tiny blue circles.
+      // Each rider is a 4x4 cell (circle with radius 2), arranged from top left to bottom right,
+      // with up to 3 riders per row.
+      const riderSize = 4; // each cell is 4x4
+      const maxColumns = 3;
+      // Define the starting point for the riders area.
+      // Here we assume the rider area is 12 units wide (3 cells x 4 units),
+      // and we center this area within the train's rectangle.
+      const startX = -12; // (12/2) left offset to center a 12-wide area in a 24-wide rectangle
+      const startY = -6; // start at the top of the rectangle
+
+      for (let i = 0; i < train.onboard.length; i++) {
+        const col = i % maxColumns;
+        const row = Math.floor(i / maxColumns);
+        const cx = startX + col * riderSize + riderSize / 2; // center of the cell horizontally
+        const cy = startY + row * riderSize + riderSize / 2; // center of the cell vertically
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
+        ctx.fillStyle = "blue";
+        ctx.fill();
+      }
 
       // Restore the canvas state so further drawing is not affected
       ctx.restore();
@@ -285,13 +307,17 @@ export function drawCommuters(ctx, commuters, pinnedCommuter) {
     let isHighlighted = pinnedCommuter && commuter === pinnedCommuter;
 
     // Draw commuter as a blue circle.
-    ctx.beginPath();
-    ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = "blue";
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "#000";
-    ctx.stroke();
+    // However, if the commuter is riding, waiting, or transferring, then it isn't drawn
+    // (it'll be handled by the station or train)
+    if (commuter.state === "walking") {
+      ctx.beginPath();
+      ctx.arc(commuter.position.x, commuter.position.y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = "blue";
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#000";
+      ctx.stroke();
+    }
 
     if (isHighlighted) {
       // Draw the commuter's route as a dotted, translucent red line.
