@@ -314,7 +314,6 @@ export function setupInteractions(
                 state.activeLine.stations[0].id &&
               state.activeLine.stations.length >= 2
             ) {
-              state.activeLine.stations.push(state.activeLine.extendCandidate);
               state.activeLine.isLoop = true;
             } else if (
               !state.activeLine.stations.some(
@@ -330,9 +329,6 @@ export function setupInteractions(
                   .id &&
               state.activeLine.stations.length >= 2
             ) {
-              state.activeLine.stations.unshift(
-                state.activeLine.extendCandidate
-              );
               state.activeLine.isLoop = true;
             } else if (
               !state.activeLine.stations.some(
@@ -357,6 +353,8 @@ export function setupInteractions(
             state.activeLine.stations.length >= 3
           ) {
             state.activeLine.isLoop = true;
+            // remove the last element, which is a duplicate
+            state.activeLine.stations.pop();
           } else {
             state.activeLine.isLoop = false;
           }

@@ -60,8 +60,31 @@ export function drawMetroLines(ctx, metroLines) {
       let len = Math.sqrt(dx * dx + dy * dy);
       let offX = (-dy / len) * offset;
       let offY = (dx / len) * offset;
-      ctx.moveTo(s1.x + offX, s1.y + offY);
-      ctx.lineTo(s2.x + offX, s2.y + offY);
+      let startX = s1.x + offX;
+      let startY = s1.y + offY;
+      let endX = s2.x + offX;
+      let endY = s2.y + offY;
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+    }
+
+    // If the line is a loop, connect the last station back to the first.
+    if (line.isLoop) {
+      let s1 = line.stations[line.stations.length - 1],
+        s2 = line.stations[0];
+      // Use the last index for the offset calculation.
+      let offset = getSegmentOffset(line, 0, metroLines);
+      let dx = s2.x - s1.x,
+        dy = s2.y - s1.y;
+      let len = Math.sqrt(dx * dx + dy * dy);
+      let offX = (-dy / len) * offset;
+      let offY = (dx / len) * offset;
+      let startX = s1.x + offX;
+      let startY = s1.y + offY;
+      let endX = s2.x + offX;
+      let endY = s2.y + offY;
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
     }
     ctx.stroke();
 
@@ -192,6 +215,17 @@ export function drawTrains(ctx, metroLines) {
       ctx.arc(train.position.x, train.position.y, 15, 0, 2 * Math.PI);
       ctx.fillStyle = line.color;
       ctx.fill();
+
+      // Draw the currentSegment value as text on the train.
+      ctx.fillStyle = "black";
+      ctx.font = "bold 12px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(
+        train.currentStationIndex,
+        train.position.x,
+        train.position.y
+      );
     });
   });
 }
