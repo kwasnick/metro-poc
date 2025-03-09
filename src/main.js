@@ -34,13 +34,11 @@ createBackground(bgCanvas);
 
 // Setup UI elements
 const lineColorDropdown = document.getElementById("lineColorDropdown");
-const newLineButton = document.getElementById("newLineButton");
 const deleteLineButton = document.getElementById("deleteLineButton");
 const counterDiv = document.getElementById("counter");
 const trainPopup = document.getElementById("trainPopup");
 const uiElements = {
   lineColorDropdown,
-  newLineButton,
   deleteLineButton,
   counterDiv,
   trainPopup,

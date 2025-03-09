@@ -24,7 +24,7 @@ export function setupInteractions(
   gridNodes,
   recalcCommuterRoutesFunc
 ) {
-  const { lineColorDropdown, newLineButton, deleteLineButton } = uiElements;
+  const { lineColorDropdown, deleteLineButton } = uiElements;
 
   function recalcCommuterRoutesCallback() {
     recalcCommuterRoutesFunc(commuters, gridNodes, metroLines);
@@ -54,21 +54,6 @@ export function setupInteractions(
   // Animation states for station creation/removal.
   state.stationCreationAnimation = null; // { node, startTime, progress }
   state.stationRemovalAnimation = null; // { station, startTime, progress }
-
-  // Toggle new line mode:
-  newLineButton.addEventListener("click", () => {
-    if (state.activeLine && state.activeLine.editingMode === "new") {
-      state.activeLine = null;
-    } else {
-      state.activeLine = {
-        id: state.nextLineId++,
-        color: lineColorDropdown.value,
-        stations: [],
-        trains: [],
-        editingMode: "new",
-      };
-    }
-  });
 
   deleteLineButton.addEventListener("click", () => {
     metroLines.splice(
@@ -468,34 +453,42 @@ export function setupInteractions(
   let touchStartX, touchStartY, touchStartTime;
 
   // Add touch event listeners for mobile devices.
-  canvas.addEventListener("touchstart", function (e) {
-    const touch = e.touches[0];
-    touchStartX = touch.clientX;
-    touchStartY = touch.clientY;
-    touchStartTime = Date.now();
-    e.preventDefault();
-    let simulatedEvent = new MouseEvent("mousedown", {
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      bubbles: true,
-      cancelable: true,
-      button: 0,
-    });
-    canvas.dispatchEvent(simulatedEvent);
-  });
+  canvas.addEventListener(
+    "touchstart",
+    function (e) {
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchStartTime = Date.now();
+      e.preventDefault();
+      let simulatedEvent = new MouseEvent("mousedown", {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      });
+      canvas.dispatchEvent(simulatedEvent);
+    },
+    { passive: false }
+  );
 
-  canvas.addEventListener("touchmove", function (e) {
-    e.preventDefault();
-    let touch = e.touches[0];
-    let simulatedEvent = new MouseEvent("mousemove", {
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      bubbles: true,
-      cancelable: true,
-      button: 0,
-    });
-    canvas.dispatchEvent(simulatedEvent);
-  });
+  canvas.addEventListener(
+    "touchmove",
+    function (e) {
+      e.preventDefault();
+      let touch = e.touches[0];
+      let simulatedEvent = new MouseEvent("mousemove", {
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      });
+      canvas.dispatchEvent(simulatedEvent);
+    },
+    { passive: false }
+  );
 
   canvas.addEventListener(
     "touchend",
