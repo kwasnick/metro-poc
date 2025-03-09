@@ -261,20 +261,17 @@ export function setupInteractions(
       if (state.activeLine.editingMode === "modify") {
         let idx = state.activeLine.modifySegmentIndex;
         let stations = state.activeLine.originalStations;
-        // For loop lines, if idx is the last station then Y should be the first station.
         let X = stations[idx];
         let Y =
           idx === stations.length - 1 && state.activeLine.isLoop
             ? stations[0]
             : stations[idx + 1];
-        let minStations = state.activeLine.isLoop ? 3 : 2;
 
         if (state.activeLine.modifyCandidate) {
-          // Candidate equals one of the segment endpoints and deletion is allowed.
+          // Candidate equals one of the segment endpoints: remove station.
           if (
-            (state.activeLine.modifyCandidate.id === X.id ||
-              state.activeLine.modifyCandidate.id === Y.id) &&
-            stations.length > minStations
+            state.activeLine.modifyCandidate.id === X.id ||
+            state.activeLine.modifyCandidate.id === Y.id
           ) {
             state.activeLine.stations = stations.slice();
             if (state.activeLine.modifyCandidate.id === X.id) {
@@ -286,6 +283,13 @@ export function setupInteractions(
               } else {
                 state.activeLine.stations.splice(idx + 1, 1);
               }
+            }
+            // If the line was a loop and now has fewer than 3 stations, change it to non-loop.
+            if (
+              state.activeLine.isLoop &&
+              state.activeLine.stations.length < 3
+            ) {
+              state.activeLine.isLoop = false;
             }
           }
           // Candidate is not one of the segment endpoints, so try to insert it if it doesn't already exist.
