@@ -319,23 +319,6 @@ export function drawBackground(ctx, bgCanvas) {
  * - For station removal, the station is drawn with a shaking effect.
  */
 export function drawStationAnimations(ctx, state, now) {
-  // Animate station creation hold (growing circle)
-  if (state.stationCreationAnimation) {
-    // calculate progress using the duration
-    const progress =
-      (Date.now() - state.stationCreationAnimation.startTime) / holdThreshold;
-    const node = state.stationCreationAnimation.node;
-    // Grow the circle from 0 up to stationRadius.
-    const animatedRadius = stationRadius * progress;
-    ctx.save();
-    ctx.globalAlpha = progress; // Fade in effect
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, animatedRadius, 0, 2 * Math.PI);
-    ctx.fillStyle = "rgba(0, 200, 0, 0.5)"; // green tint for creation
-    ctx.fill();
-    ctx.restore();
-  }
-
   // Animate station removal hold (shaking effect)
   if (state.stationRemovalAnimation) {
     // calculate progress using the duration

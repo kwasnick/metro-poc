@@ -26,6 +26,9 @@ canvas.width = canvasWidth;
 canvas.height = canvasHeight;
 const ctx = canvas.getContext("2d");
 
+// Initialize Station Icon
+const stationIcon = document.getElementById("stationIcon");
+
 // Create offscreen background
 const bgCanvas = document.createElement("canvas");
 bgCanvas.width = canvas.width;
@@ -51,7 +54,6 @@ const state = {
   nextTrainId: 1,
   pinnedCommuter: null,
   currentMousePos: { x: 0, y: 0 },
-  stationCreationAnimation: null,
   stationRemovalAnimation: null,
 };
 
@@ -72,7 +74,14 @@ for (let col = 0; col < canvasCols; col++) {
 }
 
 // Setup mouse and UI interactions:
-setupInteractions(canvas, uiElements, state, gridNodes, recalculateRoutes);
+setupInteractions(
+  canvas,
+  uiElements,
+  state,
+  gridNodes,
+  recalculateRoutes,
+  stationIcon
+);
 
 // Main update loop
 function update(now) {

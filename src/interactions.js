@@ -22,7 +22,8 @@ export function setupInteractions(
   uiElements,
   state,
   gridNodes,
-  recalcCommuterRoutesFunc
+  recalcCommuterRoutesFunc,
+  stationIcon
 ) {
   const { lineColorDropdown, deleteLineButton } = uiElements;
 
@@ -40,7 +41,6 @@ export function setupInteractions(
   }
 
   // ---- New Hold Parameters ----
-  let stationCreationHoldTimer = null;
   let stationRemovalHoldTimer = null;
 
   // New constant: if the mouse moves farther than this (in pixels) from the original point, cancel the hold.
@@ -52,7 +52,6 @@ export function setupInteractions(
   const holdCancelThreshold = isTouchDevice ? 25 : 20;
 
   // Animation states for station creation/removal.
-  state.stationCreationAnimation = null; // { node, startTime, progress }
   state.stationRemovalAnimation = null; // { station, startTime, progress }
 
   deleteLineButton.addEventListener("click", () => {
@@ -132,50 +131,7 @@ export function setupInteractions(
         return;
       }
 
-      // (C) Otherwise, if near a grid node, start a station creation hold.
-      let closest = null,
-        bestDist = Infinity;
-      for (let key in gridNodes) {
-        let node = gridNodes[key];
-        let d = distance(x, y, node.x, node.y);
-        if (d < bestDist) {
-          bestDist = d;
-          closest = node;
-        }
-      }
-      if (closest && bestDist < snapThreshold) {
-        stationCreationHoldTimer = setTimeout(() => {
-          // Create the station once the hold threshold is met.
-          let exists = stations.find(
-            (s) => s.col === closest.col && s.row === closest.row
-          );
-          if (!exists) {
-            let stationId = generateRandomStationId();
-            // Check if the stationId is already in use; if yes, generate a new one.
-            while (stations.some((station) => station.id === stationId)) {
-              stationId = generateRandomStationId();
-            }
-            let newStation = {
-              id: stationId,
-              x: closest.x,
-              y: closest.y,
-              col: closest.col,
-              row: closest.row,
-            };
-            stations.push(newStation);
-            recalcCommuterRoutesCallback();
-          }
-          state.stationCreationAnimation = null;
-        }, holdThreshold);
-
-        state.stationCreationAnimation = {
-          node: closest,
-          startTime: Date.now(),
-          progress: 0,
-        };
-        isDragging = true;
-        return;
-      }
+      return;
     }
 
     // ---- Existing metro line interactions ----
@@ -215,19 +171,6 @@ export function setupInteractions(
   canvas.addEventListener("mousemove", (e) => {
     currentMousePos = getXY(e);
     state.currentMousePos = currentMousePos;
-
-    // Cancel station creation hold if moved too far from the original grid node.
-    if (state.stationCreationAnimation) {
-      const origin = state.stationCreationAnimation.node;
-      if (
-        distance(currentMousePos.x, currentMousePos.y, origin.x, origin.y) >
-        holdCancelThreshold
-      ) {
-        clearTimeout(stationCreationHoldTimer);
-        stationCreationHoldTimer = null;
-        state.stationCreationAnimation = null;
-      }
-    }
 
     // NEW: If dragging from a clicked station (set for removal) beyond the threshold,
     // cancel the removal hold and start new line creation mode.
@@ -310,11 +253,6 @@ export function setupInteractions(
   canvas.addEventListener("mouseup", (e) => {
     isDragging = false;
     // Cancel any pending station hold actions if the hold was released early.
-    if (stationCreationHoldTimer) {
-      clearTimeout(stationCreationHoldTimer);
-      stationCreationHoldTimer = null;
-      state.stationCreationAnimation = null;
-    }
     if (stationRemovalHoldTimer) {
       clearTimeout(stationRemovalHoldTimer);
       stationRemovalHoldTimer = null;
@@ -425,6 +363,11 @@ export function setupInteractions(
           metroLines.push(state.activeLine);
           spawnDefaultTrains(state.activeLine);
           recalcCommuterRoutesCallback();
+
+          // *** Auto-advance the color picker ***
+          const colorDropdown = document.getElementById("lineColorDropdown");
+          colorDropdown.selectedIndex =
+            (colorDropdown.selectedIndex + 1) % colorDropdown.options.length;
         }
         state.activeLine = null;
       }
@@ -523,4 +466,128 @@ export function setupInteractions(
     },
     { passive: false }
   );
+
+  // ---------------------------
+  // Desktop Drag-and-Drop Setup
+  // ---------------------------
+  stationIcon.addEventListener("dragstart", (e) => {
+    // Set a data payload (if needed for visual cues)
+    e.dataTransfer.setData("text/plain", "station");
+  });
+
+  canvas.addEventListener("dragover", (e) => {
+    e.preventDefault(); // Allow drop
+  });
+
+  canvas.addEventListener("drop", (e) => {
+    e.preventDefault();
+    // Convert drop event coordinates to canvas coordinates
+    let dropPos = getXY(e);
+    handleStationDrop(dropPos);
+  });
+
+  // ---------------------------
+  // Mobile Drag Simulation Setup
+  // ---------------------------
+  let mobileStationGhost = null; // A floating copy of the station icon for visual feedback
+
+  stationIcon.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      // Create a ghost element for visual feedback during the drag
+      mobileStationGhost = stationIcon.cloneNode(true);
+      mobileStationGhost.style.position = "absolute";
+      mobileStationGhost.style.opacity = "0.7";
+      mobileStationGhost.style.pointerEvents = "none";
+      // Append it to the body so it can move freely
+      document.body.appendChild(mobileStationGhost);
+      // Position the ghost at the initial touch point
+      let touch = e.touches[0];
+      mobileStationGhost.style.left = touch.clientX + "px";
+      mobileStationGhost.style.top = touch.clientY + "px";
+    },
+    { passive: false }
+  );
+
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!mobileStationGhost) return;
+      e.preventDefault();
+      // Update ghost position with the touch
+      let touch = e.touches[0];
+      mobileStationGhost.style.left = touch.clientX + "px";
+      mobileStationGhost.style.top = touch.clientY + "px";
+    },
+    { passive: false }
+  );
+
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      if (!mobileStationGhost) return;
+      e.preventDefault();
+      // Use the changedTouches to determine the final drop location
+      let touch = e.changedTouches[0];
+      let dropPos = getXY({ clientX: touch.clientX, clientY: touch.clientY });
+
+      // Remove the ghost element
+      document.body.removeChild(mobileStationGhost);
+      mobileStationGhost = null;
+
+      // Only process the drop if the touch ended over the canvas area.
+      let canvasRect = canvas.getBoundingClientRect();
+      if (
+        touch.clientX >= canvasRect.left &&
+        touch.clientX <= canvasRect.right &&
+        touch.clientY >= canvasRect.top &&
+        touch.clientY <= canvasRect.bottom
+      ) {
+        handleStationDrop(dropPos);
+      }
+    },
+    { passive: false }
+  );
+
+  // ---------------------------
+  // Common Drop Logic
+  // ---------------------------
+  function handleStationDrop(dropPos) {
+    // Find the nearest grid node to the drop position
+    let closest = null,
+      bestDist = Infinity;
+    for (let key in gridNodes) {
+      let node = gridNodes[key];
+      let d = distance(dropPos.x, dropPos.y, node.x, node.y);
+      if (d < bestDist) {
+        bestDist = d;
+        closest = node;
+      }
+    }
+    // Check if the drop is within the snapping threshold
+    if (closest && bestDist < snapThreshold) {
+      // Ensure no station already exists at this grid node
+      let exists = stations.find(
+        (s) => s.col === closest.col && s.row === closest.row
+      );
+      if (!exists) {
+        let stationId = generateRandomStationId();
+        // Make sure the ID is unique
+        while (stations.some((station) => station.id === stationId)) {
+          stationId = generateRandomStationId();
+        }
+        let newStation = {
+          id: stationId,
+          x: closest.x,
+          y: closest.y,
+          col: closest.col,
+          row: closest.row,
+        };
+        stations.push(newStation);
+        // Update routes for commuters after adding a station
+        recalcCommuterRoutesCallback();
+      }
+    }
+  }
 }
