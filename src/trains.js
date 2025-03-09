@@ -1,6 +1,7 @@
 import { distance } from "./utils.js";
 import { acceleration, maxSpeed, dwellTime } from "./constants.js";
 import { computeTravelTime } from "./utils.js";
+import { boardEffects } from "./globals.js";
 
 export function spawnDefaultTrains(line) {
   line.trains = [];
@@ -117,6 +118,11 @@ function offloadPassengersAndProgress(train, now) {
           commuter.state = "walking";
           commuter.progress = 0;
         }
+        boardEffects.push({
+          x: commuter.position.x,
+          y: commuter.position.y,
+          startTime: now,
+        });
       }
     }
   });

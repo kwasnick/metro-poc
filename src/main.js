@@ -9,7 +9,7 @@ import {
   stations,
   metroLines,
   commuters,
-  arrivedCount,
+  boardEffects,
   arrivalEffects,
 } from "./globals.js";
 import { roundTo } from "./utils.js";
@@ -101,6 +101,7 @@ function update(now) {
     commuters,
     state.pinnedCommuter,
     arrivalEffects,
+    boardEffects,
     now,
     state
   );

@@ -2,7 +2,7 @@
 import { distance } from "./utils.js";
 import { walkingSpeed, transferTime } from "./constants.js";
 import { computeFastestRoute } from "./pathfinding.js";
-import { arrivalEffects } from "./globals.js";
+import { arrivalEffects, boardEffects } from "./globals.js";
 import { getNextStop } from "./trains.js";
 import { recordArrival } from "./arrivalRate.js";
 
@@ -167,6 +167,11 @@ export function updateCommuters(commuters, metroLines, gridNodes, now) {
         commuter.state = "riding";
         candidate.onboard = candidate.onboard || [];
         candidate.onboard.push(commuter);
+        boardEffects.push({
+          x: commuter.position.x,
+          y: commuter.position.y,
+          startTime: now,
+        });
       }
     }
   });

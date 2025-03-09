@@ -8,14 +8,8 @@ export let nextLineId = 1;
 export let nextTrainId = 1;
 export let nextCommuterId = 1;
 
-// Arrival stats and effects:
-export let arrivedCount = 0;
-
-export function setArrivedCount(count) {
-  arrivedCount = count;
-}
-
 export let arrivalEffects = []; // { x, y, startTime }
+export let boardEffects = [];
 
 // Pin state for UI:
 export let pinnedCommuter = null;

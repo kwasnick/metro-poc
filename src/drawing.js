@@ -398,6 +398,29 @@ export function drawArrivalEffects(ctx, arrivalEffects, now) {
   }
 }
 
+export function drawBoardEffects(ctx, boardEffects, now) {
+  for (let i = boardEffects.length - 1; i >= 0; i--) {
+    let effect = boardEffects[i];
+    let dt = now - effect.startTime;
+    let duration = 300;
+    if (dt > duration) {
+      boardEffects.splice(i, 1);
+    } else {
+      let progress = dt / duration;
+      let alpha = 1 - progress;
+      let radius = 10 + 10 * progress;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
 export function drawBackground(ctx, bgCanvas) {
   ctx.drawImage(bgCanvas, 0, 0);
 }
@@ -440,6 +463,7 @@ export function draw(
   commuters,
   pinnedCommuter,
   arrivalEffects,
+  boardEffects,
   now,
   state
 ) {
@@ -451,5 +475,6 @@ export function draw(
   drawTrains(ctx, metroLines);
   drawCommuters(ctx, commuters, pinnedCommuter);
   drawArrivalEffects(ctx, arrivalEffects, now);
+  drawBoardEffects(ctx, boardEffects, now);
   drawStationAnimations(ctx, state, now);
 }
