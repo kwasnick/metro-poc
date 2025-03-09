@@ -231,11 +231,12 @@ export function drawTrains(ctx, metroLines) {
   metroLines.forEach((line) => {
     line.trains.forEach((train) => {
       // Calculate rotation based on the train's original segment if available
-      let rotation = 0;
+      let rotation = train.rotation;
       if (train.originalSegment) {
         const dy = train.originalSegment.to.y - train.originalSegment.from.y;
         const dx = train.originalSegment.to.x - train.originalSegment.from.x;
         rotation = Math.atan2(dy, dx);
+        train.rotation = rotation;
       }
 
       // Save the current canvas state
@@ -247,9 +248,9 @@ export function drawTrains(ctx, metroLines) {
       ctx.rotate(rotation);
 
       // Draw the train as a rectangle centered on (0,0)
-      // For example, a 30x20 rectangle
+      // For example, a 24x12
       ctx.beginPath();
-      ctx.rect(-15, -10, 30, 20); // offsets to center the rectangle
+      ctx.rect(-12, -6, 24, 12); // offsets to center the rectangle
       ctx.fillStyle = line.color;
       ctx.fill();
       // Optionally add a border around the train

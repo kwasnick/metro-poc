@@ -196,9 +196,6 @@ export function updateTrains(metroLines, now) {
             to: { ...segTo },
             travelTime: train.travelTime,
           };
-          console.log(
-            `train ${train.id} moving from ${segFrom.id} to ${segTo.id} at ${now}`
-          );
         }
       } else if (train.state === "moving") {
         let segTo = train.originalSegment.to;
