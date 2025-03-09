@@ -1,6 +1,6 @@
 // constants.js
-export const canvasWidth = 800;
-export const canvasHeight = 600;
+export const canvasWidth = 600;
+export const canvasHeight = 1000;
 
 // Use a 2:1 ratio for grid cells (e.g. 100 x 50)
 export const gridSpacingX = 100;
