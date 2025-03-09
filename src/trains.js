@@ -108,6 +108,7 @@ function offloadPassengersAndProgress(train, now) {
       commuter.targetStop = null;
       commuter.currentStation = arrivalStation;
       if (commuter.currentEdgeIndex >= commuter.route.length) {
+        commuter.state = "walking";
         commuter.arrived = true;
       } else {
         commuter.position = commuter.route[commuter.currentEdgeIndex].from;
@@ -226,6 +227,9 @@ export function updateTrains(metroLines, now) {
           commuter.position = { x: train.position.x, y: train.position.y };
         });
       }
+      train.onboard = train.onboard.filter(
+        (commuter) => commuter.state === "riding"
+      );
     });
   });
 }
