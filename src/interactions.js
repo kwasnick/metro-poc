@@ -30,6 +30,15 @@ export function setupInteractions(
     recalcCommuterRoutesFunc(commuters, gridNodes, metroLines);
   }
 
+  function getXY(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    let x = (e.clientX - rect.left) * scaleX;
+    let y = (e.clientY - rect.top) * scaleY;
+    return { x, y };
+  }
+
   // ---- New Hold Parameters ----
   let stationCreationHoldTimer = null;
   let stationRemovalHoldTimer = null;
@@ -73,10 +82,8 @@ export function setupInteractions(
   let currentMousePos = { x: 0, y: 0 };
 
   canvas.addEventListener("mousedown", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
-    currentMousePos = { x, y };
+    currentMousePos = getXY(e);
+    let { x, y } = currentMousePos;
     state.currentMousePos = currentMousePos;
 
     // ---- If no metro line is active, check for station creation/removal via hold ----
@@ -221,9 +228,7 @@ export function setupInteractions(
   });
 
   canvas.addEventListener("mousemove", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    currentMousePos.x = e.clientX - rect.left;
-    currentMousePos.y = e.clientY - rect.top;
+    currentMousePos = getXY(e);
     state.currentMousePos = currentMousePos;
 
     // Cancel station creation hold if moved too far from the original grid node.
@@ -442,11 +447,11 @@ export function setupInteractions(
   });
 
   canvas.addEventListener("click", (e) => {
+    console.log("click", e);
     // Existing commuter pinning functionality.
     if (state.activeLine) return;
-    const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
+    currentMousePos = getXY(e);
+    let { x, y } = currentMousePos;
     let found = null;
     for (let commuter of commuters) {
       if (distance(x, y, commuter.position.x, commuter.position.y) < 15) {
@@ -463,6 +468,7 @@ export function setupInteractions(
 
   // Add touch event listeners for mobile devices.
   canvas.addEventListener("touchstart", function (e) {
+    console.log("touchstart", e);
     e.preventDefault();
     let touch = e.touches[0];
     let simulatedEvent = new MouseEvent("mousedown", {
@@ -490,9 +496,11 @@ export function setupInteractions(
 
   canvas.addEventListener("touchend", function (e) {
     e.preventDefault();
-    // Delay mouseup slightly to give hold timers a chance to fire
+    // Slight delay to ensure hold timers can fire if needed
     setTimeout(() => {
       let simulatedEvent = new MouseEvent("mouseup", {
+        clientX: e.changedTouches[0].clientX,
+        clientY: e.changedTouches[0].clientY,
         bubbles: true,
         cancelable: true,
         button: 0,
